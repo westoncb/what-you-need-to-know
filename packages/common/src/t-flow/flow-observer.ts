@@ -1,42 +1,47 @@
+/* ------------------------------------------------------------------
+   Flow Observer  – snapshot-only, calls/errors counters
+------------------------------------------------------------------- */
 import type { ChatMsg } from "./openrouter";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
 /* ------------------------------------------------------------------ */
 export interface CallInfo {
-  id     : string;
-  idx    : number;
-  input  : unknown;
-  prompt?: ChatMsg[];
-  output?: unknown;
-  error ?: string;
-  started: number;
+  id      : string;
+  idx     : number;
+  input   : unknown;
+  prompt ?: ChatMsg[];
+  output ?: unknown;
+  error  ?: string;
+  started : number;
   latency?: number;
-  state  : "run" | "done" | "error";
+  state   : "run" | "done" | "error";
 }
+
 export interface StageInfo {
   id        : string;
   name      : string;
   kind      : "cpu" | "llm";
   cfg       : Record<string, unknown>;
-  totals    : { in: number; out: number; err: number };
-  openCalls : number;
-  lastCall? : number;
-  calls     : CallInfo[];
+  calls     : number;        // total calls started
+  errors    : number;        // calls ended in error
+  openCalls : number;        // currently running
+  lastCall ?: number;        // ms epoch
+  callList  : CallInfo[];
 }
-export interface SnapshotEvent {
-  t : "snapshot";
-  ts: number;
-  stages: Record<string, StageInfo>;
-}
-export type FlowEvent = SnapshotEvent;
-export type FlowLogger = (e: SnapshotEvent) => void;
+
+/* snapshot is the ONLY event the outside world sees */
+export type FlowEvent =
+  { t: "snapshot"; ts: number; stages: Record<string, StageInfo> };
+
+export type FlowLogger = (e: FlowEvent) => void;
 
 /* ------------------------------------------------------------------ */
-/* State                                                               */
+/* Internal state                                                     */
 /* ------------------------------------------------------------------ */
-const STAGES = new Map<string, StageInfo>();
+const STAGES        = new Map<string, StageInfo>();
 const CALL_TO_STAGE = new Map<string, string>();
+
 let stageCounter = 0;
 let callCounter  = 0;
 
@@ -45,34 +50,37 @@ let callCounter  = 0;
 /* ------------------------------------------------------------------ */
 let LOGGER: FlowLogger | null = null;
 let snapTimer: NodeJS.Timeout | null = null;
-let SNAP_MS = 100;       // default 10 Hz
+let SNAP_MS = 100;                      // default 10 Hz
 
 export function setLogger(
   fn: FlowLogger | null,
-  opts: { snapshotMs?: number } = {},
+  { snapshotMs = 100 }: { snapshotMs?: number } = {},
 ) {
   LOGGER  = fn;
-  SNAP_MS = opts.snapshotMs ?? SNAP_MS;
+  SNAP_MS = snapshotMs;
+
   if (snapTimer) clearInterval(snapTimer), (snapTimer = null);
   if (fn) {
     snapTimer = setInterval(emitSnapshot, SNAP_MS);
-    (snapTimer as any).unref?.();
+    (snapTimer as any).unref?.();       // don’t block process exit (Node)
   }
 }
 
 function emitSnapshot() {
   if (!LOGGER) return;
-  // deep‑clone via JSON is fine at our scale
-  const stagesObj: Record<string, StageInfo> = JSON.parse(
-    JSON.stringify(Object.fromEntries(STAGES))
-  );
-  LOGGER({ t: "snapshot", ts: Date.now(), stages: stagesObj });
+  LOGGER({
+    t: "snapshot",
+    ts: Date.now(),
+    stages: Object.fromEntries(STAGES),
+  });
 }
 
 /* ------------------------------------------------------------------ */
-/* Public helpers for stages                                          */
+/* Stage & call bookkeeping                                           */
 /* ------------------------------------------------------------------ */
-export function newStageId() { return `S${stageCounter++}`; }
+export function newStageId() {
+  return `S${stageCounter++}`;
+}
 
 export function registerStage(
   id  : string,
@@ -82,25 +90,24 @@ export function registerStage(
 ) {
   STAGES.set(id, {
     id, name, kind, cfg,
-    totals: { in: 0, out: 0, err: 0 },
-    openCalls: 0,
-    calls: [],
+    calls: 0, errors: 0, openCalls: 0, callList: [],
   });
 }
 
+/* called by wrappers / instrumentStage */
 export function startCall(
   stageId: string,
   idx    : number,
   input  : unknown,
   prompt?: ChatMsg[],
 ): string {
-  const cid = `C${callCounter++}`;
+  const cid   = `C${callCounter++}`;
   const stage = STAGES.get(stageId);
   if (!stage) throw new Error(`Unknown stage ${stageId}`);
 
-  stage.totals.in++;
+  stage.calls++;
   stage.openCalls++;
-  stage.calls.push({
+  stage.callList.push({
     id: cid, idx, input, prompt,
     started: Date.now(), state: "run",
   });
@@ -118,56 +125,80 @@ export function endCall(
   const stageId = CALL_TO_STAGE.get(callId);
   if (!stageId) return;
   const stage = STAGES.get(stageId)!;
-  const call  = stage.calls.find(c => c.id === callId);
-  if (!call) return;
 
-  call.output  = output;
-  call.error   = error;
-  call.latency = started ? Date.now() - started : undefined;
-  call.state   = ok ? "done" : "error";
+  const c = stage.callList.find(x => x.id === callId);
+  if (c) {
+    c.output  = output;
+    c.error   = error;
+    c.state   = ok ? "done" : "error";
+    c.latency = started ? Date.now() - started : undefined;
+  }
 
-  if (ok) stage.totals.out++; else stage.totals.err++;
+  if (!ok) stage.errors++;
   stage.openCalls--;
   stage.lastCall = Date.now();
 }
 
 /* ------------------------------------------------------------------ */
-/* Stage decorator (unchanged except it no longer logs per‑event)     */
+/* Stage decorator – unchanged API                                    */
 /* ------------------------------------------------------------------ */
-export type Stage<I, O> = (src: AsyncIterable<I>, opts?: unknown) => AsyncIterable<O>;
+export type Stage<I, O> =
+  (src: AsyncIterable<I>, opts?: unknown) => AsyncIterable<O>;
 
+/**
+ * Wrap a stage generator to auto-log calls.
+ *
+ * @param name      label ("map", "llmMap", …)
+ * @param kind      'cpu' | 'llm'
+ * @param cfg       static config (model, temp, …)
+ * @param inner     original stage implementation
+ * @param perItem   true → one call per item; false → one for whole stream
+ */
 export function instrumentStage<I, O>(
-  name   : string,
-  kind   : "cpu" | "llm",
-  cfg    : Record<string, unknown>,
-  inner  : Stage<I, O>,
+  name : string,
+  kind : "cpu" | "llm",
+  cfg  : Record<string, unknown>,
+  inner: Stage<I, O>,
   perItem = true,
 ): Stage<I, O> {
-  const id = newStageId();
-  registerStage(id, name, kind, cfg);
+  const stageId = newStageId();
+  registerStage(stageId, name, kind, cfg);
 
+  /* return wrapper generator */
   return async function* (src: AsyncIterable<I>, opts?: unknown) {
     if (perItem) {
       let idx = 0;
       for await (const item of src) {
         const started = Date.now();
-        const cid     = startCall(id, idx++, item);
+        const cid     = startCall(stageId, idx++, item);
+
         try {
-          for await (const o of inner((async function*(){ yield item; })(), opts))
-            yield o, endCall(cid, true, o, undefined, started);
+          for await (const o of inner(
+            (async function* () { yield item; })(), opts))
+          {
+            yield o;
+            endCall(cid, true, o, undefined, started);
+          }
         } catch (err) {
-          endCall(cid, false, undefined, String((err as Error).message), started);
+          endCall(
+            cid, false, undefined,
+            (err as Error).message, started,
+          );
           throw err;
         }
       }
     } else {
+      /* batch mode: one call for entire src */
       const started = Date.now();
-      const cid     = startCall(id, 0, "[batch]");
+      const cid     = startCall(stageId, 0, "[batch]");
       try {
         for await (const o of inner(src, opts)) yield o;
         endCall(cid, true, "[batch-end]", undefined, started);
       } catch (err) {
-        endCall(cid, false, undefined, String((err as Error).message), started);
+        endCall(
+          cid, false, undefined,
+          (err as Error).message, started,
+        );
         throw err;
       }
     }

@@ -278,12 +278,11 @@ export function StageColumn({ stage }) {
   if (!stage) return null;
 
   // Make sure we have a valid calls array
-  const calls = Array.isArray(stage.calls) ? stage.calls : [];
+  const calls = Array.isArray(stage.callList) ? stage.callList : [];
 
   // Get counts and stats
   const totalCalls = calls.length;
   const openCalls = stage.openCalls || 0;
-  const totals = stage.totals || { in: 0, out: 0, err: 0 };
 
   // Format kind badge color
   const kindColors = {
@@ -301,9 +300,9 @@ export function StageColumn({ stage }) {
             <div style={{...columnStyles.kind, backgroundColor: kindColor}}>{stage.kind || 'unknown'}</div>
           </div>
           <div style={columnStyles.stats}>
-            <div style={columnStyles.stat}>In: {totals.in}</div>
-            <div style={columnStyles.stat}>Out: {totals.out}</div>
-            <div style={columnStyles.stat}>Err: {totals.err}</div>
+            <div style={columnStyles.stat}>Calls: {stage.calls}</div>
+            <div style={columnStyles.stat}>Open calls: {stage.openCalls}</div>
+            <div style={columnStyles.stat}>Err: {stage.errors}</div>
           </div>
         </div>
 

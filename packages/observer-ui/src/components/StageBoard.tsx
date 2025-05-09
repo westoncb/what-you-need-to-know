@@ -20,7 +20,7 @@ export function StageBoard() {
 
     for (const stage of stages.values()) {
       if (stage.calls && stage.calls.length > 0) active++;
-      if (stage.calls) total += stage.calls.length;
+      if (stage.calls) total += stage.calls;
       if (stage.openCalls) running += stage.openCalls;
     }
 
