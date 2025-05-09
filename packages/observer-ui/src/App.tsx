@@ -9,7 +9,6 @@ export default function App() {
 
   return (
     <div>
-      <h1 style={{ margin: "0.5rem 1rem" }}>Flow Observer</h1>
       <StageBoard />
     </div>
   );

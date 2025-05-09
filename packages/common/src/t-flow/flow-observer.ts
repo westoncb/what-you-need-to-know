@@ -1,40 +1,10 @@
-/* ------------------------------------------------------------------
-   Flow Observer – v2.1
-   ------------------------------------------------------------------
-   • Emits typed events for UI streaming via WebSocket or any transport.
-   • Maintains a ring‑buffer of the most recent `ringSize` *completed* calls
-     per stage (never drops in‑flight calls).
-   • Emits a terminal "flow_end" event so UIs can reset without heuristics.
---------------------------------------------------------------------*/
 import type { ChatMsg } from "./openrouter";
 
 /* ------------------------------------------------------------------ */
-/* Event types                                                        */
-/* ------------------------------------------------------------------ */
-export type FlowEvent =
-  | { t: "stage_create"; id: string; name: string; kind: "cpu" | "llm"; cfg: Record<string, unknown> }
-  | { t: "call_start" ; id: string; stage: string; idx: number; input: unknown; prompt?: ChatMsg[]; ts: number }
-  | { t: "call_end"   ; id: string; ok: boolean; output?: unknown; error?: string; latency: number; ts: number }
-  | { t: "snapshot"   ; ts: number; stages: Record<string, StageSnapshot> }
-  | { t: "flow_end"   ; ts: number };
-
-export interface StageSnapshot {
-  name      : string;
-  kind      : "cpu" | "llm";
-  cfg       : Record<string, unknown>;
-  totals    : { in: number; out: number; err: number };
-  openCalls : number;
-  lastCall? : number;
-}
-
-export type FlowLogger = (e: FlowEvent) => void;
-
-/* ------------------------------------------------------------------ */
-/* Runtime state                                                      */
+/* Types                                                              */
 /* ------------------------------------------------------------------ */
 export interface CallInfo {
   id     : string;
-  stage  : string;
   idx    : number;
   input  : unknown;
   prompt?: ChatMsg[];
@@ -44,91 +14,78 @@ export interface CallInfo {
   latency?: number;
   state  : "run" | "done" | "error";
 }
-
-export interface StageInfo extends StageSnapshot {
-  id    : string;
-  /** Map keyed by callId (insertion order preserved). */
-  calls : Map<string, CallInfo>;
+export interface StageInfo {
+  id        : string;
+  name      : string;
+  kind      : "cpu" | "llm";
+  cfg       : Record<string, unknown>;
+  totals    : { in: number; out: number; err: number };
+  openCalls : number;
+  lastCall? : number;
+  calls     : CallInfo[];
 }
+export interface SnapshotEvent {
+  t : "snapshot";
+  ts: number;
+  stages: Record<string, StageInfo>;
+}
+export type FlowEvent = SnapshotEvent;
+export type FlowLogger = (e: SnapshotEvent) => void;
 
 /* ------------------------------------------------------------------ */
-/* Internal data structures                                           */
+/* State                                                               */
 /* ------------------------------------------------------------------ */
-const STAGES      = new Map<string, StageInfo>();
-const CALL_TO_STG = new Map<string, string>();
-
+const STAGES = new Map<string, StageInfo>();
+const CALL_TO_STAGE = new Map<string, string>();
 let stageCounter = 0;
 let callCounter  = 0;
 
 /* ------------------------------------------------------------------ */
-/* Logger configuration                                               */
+/* Logger setup                                                       */
 /* ------------------------------------------------------------------ */
-let LOGGER   : FlowLogger | null = null;
+let LOGGER: FlowLogger | null = null;
 let snapTimer: NodeJS.Timeout | null = null;
-
-let SNAP_MS = 0;         // snapshot cadence (ms)
-let RING    = Infinity;  // max completed calls retained per stage
+let SNAP_MS = 100;       // default 10 Hz
 
 export function setLogger(
   fn: FlowLogger | null,
-  opts: { snapshotMs?: number; ringSize?: number } = {},
+  opts: { snapshotMs?: number } = {},
 ) {
   LOGGER  = fn;
   SNAP_MS = opts.snapshotMs ?? SNAP_MS;
-  RING    = opts.ringSize   ?? RING;
-
   if (snapTimer) clearInterval(snapTimer), (snapTimer = null);
-  if (fn && SNAP_MS > 0) {
+  if (fn) {
     snapTimer = setInterval(emitSnapshot, SNAP_MS);
-    (snapTimer as any).unref?.(); // don’t keep Node alive
+    (snapTimer as any).unref?.();
   }
 }
 
-function log(evt: FlowEvent) {
-  try { LOGGER?.(evt); } catch (err) {
-    console.error("[Flow] logger threw:", err);
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* Snapshot helpers                                                   */
-/* ------------------------------------------------------------------ */
 function emitSnapshot() {
-  const snap: Record<string, StageSnapshot> = {};
-  STAGES.forEach((s, id) => {
-    snap[id] = {
-      name     : s.name,
-      kind     : s.kind,
-      cfg      : s.cfg,
-      totals   : { ...s.totals },
-      openCalls: s.openCalls,
-      lastCall : s.lastCall,
-    };
-  });
-  log({ t: "snapshot", ts: Date.now(), stages: snap });
+  if (!LOGGER) return;
+  // deep‑clone via JSON is fine at our scale
+  const stagesObj: Record<string, StageInfo> = JSON.parse(
+    JSON.stringify(Object.fromEntries(STAGES))
+  );
+  LOGGER({ t: "snapshot", ts: Date.now(), stages: stagesObj });
 }
 
 /* ------------------------------------------------------------------ */
-/* Public API – stage / call lifecycle                                */
+/* Public helpers for stages                                          */
 /* ------------------------------------------------------------------ */
 export function newStageId() { return `S${stageCounter++}`; }
 
 export function registerStage(
-  id : string,
+  id  : string,
   name: string,
   kind: "cpu" | "llm",
-  cfg : Record<string, unknown>,
+  cfg : Record<string, unknown> = {},
 ) {
   STAGES.set(id, {
-    id,
-    name,
-    kind,
-    cfg,
-    totals   : { in: 0, out: 0, err: 0 },
+    id, name, kind, cfg,
+    totals: { in: 0, out: 0, err: 0 },
     openCalls: 0,
-    calls    : new Map(),
+    calls: [],
   });
-  log({ t: "stage_create", id, name, kind, cfg });
 }
 
 export function startCall(
@@ -137,20 +94,17 @@ export function startCall(
   input  : unknown,
   prompt?: ChatMsg[],
 ): string {
-  const cid   = `C${callCounter++}`;
+  const cid = `C${callCounter++}`;
   const stage = STAGES.get(stageId);
   if (!stage) throw new Error(`Unknown stage ${stageId}`);
 
   stage.totals.in++;
   stage.openCalls++;
-
-  stage.calls.set(cid, {
-    id: cid, stage: stageId, idx, input, prompt,
+  stage.calls.push({
+    id: cid, idx, input, prompt,
     started: Date.now(), state: "run",
   });
-  CALL_TO_STG.set(cid, stageId);
-
-  log({ t: "call_start", id: cid, stage: stageId, idx, input, prompt, ts: Date.now() });
+  CALL_TO_STAGE.set(cid, stageId);
   return cid;
 }
 
@@ -161,39 +115,24 @@ export function endCall(
   error ?: string,
   started?: number,
 ) {
-  const stageId = CALL_TO_STG.get(callId);
+  const stageId = CALL_TO_STAGE.get(callId);
   if (!stageId) return;
   const stage = STAGES.get(stageId)!;
+  const call  = stage.calls.find(c => c.id === callId);
+  if (!call) return;
 
-  const call = stage.calls.get(callId);
-  if (call) {
-    call.output  = output;
-    call.error   = error;
-    call.latency = started ? Date.now() - started : undefined;
-    call.state   = ok ? "done" : "error";
-  }
+  call.output  = output;
+  call.error   = error;
+  call.latency = started ? Date.now() - started : undefined;
+  call.state   = ok ? "done" : "error";
 
   if (ok) stage.totals.out++; else stage.totals.err++;
   stage.openCalls--;
   stage.lastCall = Date.now();
-
-  // after marking completed, evict if we exceed RING
-  while (stage.calls.size > RING) {
-    const oldest = stage.calls.keys().next().value as string;
-    const info   = stage.calls.get(oldest);
-    if (info && info.state === "run") break;  // never drop in‑flight calls
-    stage.calls.delete(oldest);
-  }
-
-  log({ t: "call_end", id: callId, ok, output, error,
-        latency: started ? Date.now() - started : 0, ts: Date.now() });
 }
 
-/** Emit once Flow.run() resolves. */
-export function flowEnd() { log({ t: "flow_end", ts: Date.now() }); }
-
 /* ------------------------------------------------------------------ */
-/* Stage decorator                                                    */
+/* Stage decorator (unchanged except it no longer logs per‑event)     */
 /* ------------------------------------------------------------------ */
 export type Stage<I, O> = (src: AsyncIterable<I>, opts?: unknown) => AsyncIterable<O>;
 
