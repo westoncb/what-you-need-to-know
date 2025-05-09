@@ -3,13 +3,15 @@
   "private": true,
   "packageManager": "pnpm@10.10.0",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/observer-ui"
   ],
   "scripts": {
     "news:fetch": "tsx packages/backend/cli/news-fetch.ts",
     "mmge:run": "tsx packages/backend/cli/mmge-run.ts",
     "site:export": "tsx packages/backend/cli/site-export.ts",
-    "push:today": "bash scripts/push-today.sh"
+    "push:today": "bash scripts/push-today.sh",
+    "dev:observer": "pnpm --filter observer-ui dev"
   },
   "devDependencies": {
     "tsx": "^4.19.4"
