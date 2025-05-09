@@ -14,9 +14,9 @@
  *    • patched llmSelect parallel batches
  *--------------------------------------------------------------------*/
 
-import { DB, NewsItem }          from "@wyntn/common/db";
-import { Flow, setLogger }                  from "@wyntn/common/t-flow/flow";
-import { ChatMsg }               from "@wyntn/common/t-flow/openrouter";
+import { DB, NewsItem }          from "@wyntn/common/src/db";
+import { Flow, setLogger }                  from "@wyntn/common/src/t-flow/flow";
+import { ChatMsg }               from "@wyntn/common/src/t-flow/openrouter";
 import { startWsServer } from "../ws-server";
 
 

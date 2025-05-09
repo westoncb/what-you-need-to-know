@@ -1,30 +1,16 @@
-import React, { useEffect, useState } from "react";
-import StageTable from "./components/StageTable.js";
-
-type Stage = {
-  name: string;
-  status: "idle" | "running" | "done" | "error";
-  totals: { in: number; out: number; err: number };
-};
+import { useWebSocket } from "./useWebSocket.jsx";
+import { useFlow } from "./FlowCtx.jsx";
+import { StageBoard } from "./components/StageBoard.jsx";
 
 export default function App() {
-  const [stages, setStages] = useState<Record<string, Stage>>({});
+  const { onEvent } = useFlow();
 
-  useEffect(() => {
-    const ws = new WebSocket("ws://localhost:4000");
-    ws.onmessage = (ev) => {
-      const evt = JSON.parse(ev.data);
-      if (evt.t === "snapshot") {
-        setStages(evt.stages);
-      }
-    };
-    return () => ws.close();
-  }, []);
+  useWebSocket("ws://localhost:4000", onEvent, { maxRetries: 100 });
 
   return (
     <div>
       <h1 style={{ margin: "0.5rem 1rem" }}>Flow Observer</h1>
-      <StageTable stages={stages} />
+      <StageBoard />
     </div>
   );
 }

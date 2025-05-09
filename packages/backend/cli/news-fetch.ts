@@ -1,4 +1,4 @@
-import { DB, NewsItem } from "@wyntn/common/db";
+import { DB, NewsItem } from "@wyntn/common/src/db";
 import { XMLParser } from "fast-xml-parser";
 import fetch from "node-fetch";
 import { ContentExtractor } from "../utils/content-extractor";

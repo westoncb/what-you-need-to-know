@@ -1,5 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "jsx": "react-jsx", "rootDir": "src" },
+  "compilerOptions": { "jsx": "react-jsx", "rootDir": "src", "baseUrl": ".",
+      "paths": {
+        "@wyntn/common/*": ["../../packages/common/*"]
+      }},
   "include": ["src"]
 }

@@ -1,6 +1,5 @@
-// packages/backend/logger/ws-server.ts
 import { WebSocketServer } from "ws";
-import { FlowEvent } from "@wyntn/common/t-flow/flow-observer";
+import { FlowEvent } from "@wyntn/common/src/t-flow/flow-observer";
 
 export function startWsServer(port = 4000) {
   const wss = new WebSocketServer({ port });

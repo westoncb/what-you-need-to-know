@@ -1,22 +1,22 @@
 import { call, ChatMsg, CallOpts } from "./openrouter";
-import { Semaphore } from "./flow-utils";
+import { Semaphore }               from "./flow-utils";
 
 import {
-  instrument, // stage decorator
-  instrumentBatch,
-  setLogger, // re-export so callers do Flow.setLogger
-  type FlowLogger,
+  instrumentStage, setLogger, type FlowLogger,
+  newStageId, registerStage, startCall, endCall
 } from "./flow-observer";
 
-/* ------------------------------------------------------------------ */
-/* Types & helpers                                                    */
-/* ------------------------------------------------------------------ */
-export { setLogger, FlowLogger }; // bubble up re-export
 
-export type Stage<I, O> = (
-  src: AsyncIterable<I>,
-  opts?: StageOpts,
-) => AsyncIterable<O>;
+/* ------------------------------------------------------------------ */
+/* Public re-exports                                                  */
+/* ------------------------------------------------------------------ */
+export { setLogger, FlowLogger };
+
+/* ------------------------------------------------------------------ */
+/* Internal helpers                                                   */
+/* ------------------------------------------------------------------ */
+export type Stage<I, O> =
+  (src: AsyncIterable<I>, opts?: StageOpts) => AsyncIterable<O>;
 
 export interface StageOpts {
   onError?: (err: Error, ctx: unknown) => void;
@@ -26,7 +26,9 @@ function defaultOnError(err: Error, ctx: unknown) {
   console.warn("[Flow]", err.message, ctx);
 }
 
-function chain<A, B, C>(s1: Stage<A, B>, s2: Stage<B, C>): Stage<A, C> {
+function chain<A, B, C>(
+  s1: Stage<A, B>, s2: Stage<B, C>,
+): Stage<A, C> {
   return async function* (src, opts) {
     yield* s2(s1(src, opts), opts);
   };
@@ -39,57 +41,60 @@ export function mapStage<A, B>(
   fn: (a: A) => B | Promise<B>,
   concurrency = Infinity,
 ): Stage<A, B> {
+
   const pool = isFinite(concurrency) ? new Semaphore(concurrency) : null;
 
   async function* impl(src, { onError = defaultOnError } = {}) {
-    let idx = 0;
     for await (const item of src) {
-      const curIdx = idx++;
       if (pool) await pool.acquire();
-      const p = (async () => {
-        try {
-          return await fn(item);
-        } catch (e) {
-          onError(e as Error, { stage: "map", index: curIdx });
-        } finally {
-          pool?.release();
-        }
-      })();
-      const out = await p;
-      if (out !== undefined) yield out;
+      try {
+        yield await fn(item);
+      } catch (e) {
+        onError(e as Error, { stage: "map" });
+      } finally {
+        pool?.release();
+      }
     }
   }
-  return instrument("map", "cpu", { concurrency }, impl);
+
+  return instrumentStage(
+    "map", "cpu", { concurrency }, impl, /* perItem */ true,
+  );
 }
 
 export function filterStage<A>(
   pred: (a: A) => boolean | Promise<boolean>,
   concurrency = Infinity,
 ): Stage<A, A> {
+
   const pool = isFinite(concurrency) ? new Semaphore(concurrency) : null;
 
   async function* impl(src, { onError = defaultOnError } = {}) {
-    let idx = 0;
     for await (const item of src) {
-      const curIdx = idx++;
       if (pool) await pool.acquire();
-      const keepP = (async () => {
-        try {
-          return await pred(item);
-        } catch (e) {
-          onError(e as Error, { stage: "filter", index: curIdx });
-        } finally {
-          pool?.release();
-        }
-      })();
-      if (await keepP) yield item;
+      let keep = false;
+      try {
+        keep = await pred(item);
+      } catch (e) {
+        onError(e as Error, { stage: "filter" });
+      } finally {
+        pool?.release();
+      }
+      if (keep) yield item;
     }
   }
-  return instrument("filter", "cpu", { concurrency }, impl);
+
+  return instrumentStage(
+    "filter", "cpu", { concurrency }, impl, true,
+  );
 }
 
 /* ------------------------------------------------------------------ */
 /* LLM stages                                                         */
+/* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/* LLM map – one output per item                                      */
 /* ------------------------------------------------------------------ */
 function llmMapStage<A, B>(
   model: string,
@@ -97,60 +102,73 @@ function llmMapStage<A, B>(
   opts: CallOpts<B>,
   concurrency = 8,
 ): Stage<A, B> {
-  const pool = new Semaphore(concurrency);
 
-  async function* impl(src, { onError = defaultOnError } = {}) {
+  const pool    = new Semaphore(concurrency);
+  const stageId = newStageId();
+
+  registerStage(stageId, "llmMap", "llm",
+                { model, ...opts, concurrency });
+
+  return async function* (src, { onError = defaultOnError } = {}) {
     let idx = 0;
     for await (const item of src) {
-      const curIdx = idx++;
+      const prompt  = promptFn(item);
+      const started = Date.now();
+      const cid     = startCall(stageId, idx++, item, prompt);
+
       await pool.acquire();
-      const p = (async () => {
-        try {
-          const res = await call<B>(model, promptFn(item), opts);
-          if (!res.ok) throw res.error;
-          return res.content as B;
-        } catch (e) {
-          onError(e as Error, { stage: "llmMap", index: curIdx });
-        } finally {
-          pool.release();
-        }
-      })();
-      const out = await p;
-      if (out !== undefined) yield out;
+      try {
+        const res = await call<B>(model, prompt, opts);
+        if (!res.ok) throw res.error;
+        endCall(cid, true, res.content, undefined, started);
+        yield res.content as B;
+      } catch (e) {
+        endCall(cid, false, undefined, (e as Error).message, started);
+        onError(e as Error, { stage: "llmMap" });
+      } finally {
+        pool.release();
+      }
     }
-  }
-  return instrument("llmMap", "llm", { model, ...opts, concurrency }, impl);
+  };
 }
 
+/* ------------------------------------------------------------------ */
+/* LLM filter – yields input only if judge keeps it                   */
+/* ------------------------------------------------------------------ */
 function llmFilterStage<A>(
   model: string,
   judgePrompt: (a: A) => ChatMsg[],
   opts: CallOpts<boolean>,
   concurrency = 8,
 ): Stage<A, A> {
-  const pool = new Semaphore(concurrency);
 
-  async function* impl(src, { onError = defaultOnError } = {}) {
+  const pool    = new Semaphore(concurrency);
+  const stageId = newStageId();
+
+  registerStage(stageId, "llmFilter", "llm",
+                { model, ...opts, concurrency });
+
+  return async function* (src, { onError = defaultOnError } = {}) {
     let idx = 0;
     for await (const item of src) {
-      const curIdx = idx++;
+      const prompt  = judgePrompt(item);
+      const started = Date.now();
+      const cid     = startCall(stageId, idx++, item, prompt);
+
       await pool.acquire();
-      const keepP = (async () => {
-        try {
-          const res = await call<boolean>(model, judgePrompt(item), opts);
-          if (!res.ok) throw res.error;
-          return Boolean(res.content);
-        } catch (e) {
-          onError(e as Error, { stage: "llmFilter", index: curIdx });
-          return false;
-        } finally {
-          pool.release();
-        }
-      })();
-      if (await keepP) yield item;
+      try {
+        const res  = await call<boolean>(model, prompt, opts);
+        const keep = res.ok && Boolean(res.content);
+        endCall(cid, true, keep, undefined, started);
+        if (keep) yield item;
+      } catch (e) {
+        endCall(cid, false, undefined, (e as Error).message, started);
+        onError(e as Error, { stage: "llmFilter" });
+      } finally {
+        pool.release();
+      }
     }
-  }
-  return instrument("llmFilter", "llm", { model, ...opts, concurrency }, impl);
+  };
 }
 
 function llmSelectStage<A>(
@@ -160,54 +178,58 @@ function llmSelectStage<A>(
   opts: CallOpts<A>,
   concurrency = 4,
 ): Stage<A, A> {
-  const pool = new Semaphore(concurrency);
 
-  async function* impl(src, { onError = defaultOnError } = {}) {
+  const pool     = new Semaphore(concurrency);
+  const stageId  = newStageId();
+
+  registerStage(stageId, "llmSelect", "llm",
+                { k, model, ...opts, concurrency });
+
+  return async function* (src, { onError = defaultOnError } = {}) {
     const buf: A[] = [];
     for await (const it of src) buf.push(it);
 
-    if (buf.length <= k) {
-      for (const it of buf) yield it;
-      return;
-    }
+    if (buf.length <= k) { for (const it of buf) yield it; return; }
+
+    let duelIdx = 0;
 
     while (buf.length > k) {
+      const pairs = Math.min(concurrency, buf.length - k);
       const tasks: Promise<A>[] = [];
-      const pairs = Math.min(concurrency, Math.floor((buf.length - k) / 1));
 
       for (let i = 0; i < pairs && buf.length > 1; i++) {
-        const a = buf.shift()!,
-          b = buf.shift() ?? a;
-        await pool.acquire();
-        tasks.push(
-          (async () => {
-            try {
-              const res = await call<A>(model, duelPrompt(a, b), opts);
-              return res.ok ? (res.content as A) : a;
-            } catch (e) {
-              onError(e as Error, { stage: "llmSelect" });
-              return a;
-            } finally {
-              pool.release();
-            }
-          })(),
-        );
-      }
-      buf.push(...(await Promise.all(tasks)));
-    }
-    for (const it of buf) yield it;
-  }
+        const a = buf.shift()!, b = buf.shift() ?? a;
 
-  return instrumentBatch(
-    "llmSelect",
-    "llm",
-    { k, model, ...opts, concurrency },
-    impl,
-  );
+        const prompt  = duelPrompt(a, b);
+        const started = Date.now();
+        const cid     = startCall(stageId, duelIdx++, { a, b }, prompt);
+
+        await pool.acquire();
+        tasks.push((async () => {
+          try {
+            const res = await call<A>(model, prompt, opts);
+            const winner = res.ok ? (res.content as A) : a;
+            endCall(cid, true, winner, undefined, started);
+            return winner;
+          } catch (e) {
+            endCall(cid, false, undefined, (e as Error).message, started);
+            onError(e as Error, { stage: "llmSelect" });
+            return a;
+          } finally {
+            pool.release();
+          }
+        })());
+      }
+      buf.push(...await Promise.all(tasks));
+    }
+
+    for (const it of buf) yield it;
+  };
 }
 
+
 /* ------------------------------------------------------------------ */
-/* Flow class (unchanged API)                                          */
+/* Flow class (API unchanged)                                         */
 /* ------------------------------------------------------------------ */
 export class Flow<A> {
   private constructor(
@@ -216,9 +238,7 @@ export class Flow<A> {
   ) {}
 
   static from<A>(iter: Iterable<A> | AsyncIterable<A>): Flow<A> {
-    async function* src() {
-      for await (const i of iter) yield i;
-    }
+    async function* src() { for await (const i of iter) yield i; }
     return new Flow(src);
   }
 
@@ -271,7 +291,10 @@ export class Flow<A> {
   }
 
   /* terminals */
-  async reduce<B>(fold: (acc: B, a: A) => B | Promise<B>, seed: B): Promise<B> {
+  async reduce<B>(
+    fold: (acc: B, a: A) => B | Promise<B>,
+    seed: B,
+  ): Promise<B> {
     let acc = seed;
     for await (const item of this.stage(asyncEmpty(), this.opts))
       acc = await fold(acc, item);
@@ -293,18 +316,16 @@ export class Flow<A> {
     return acc;
   }
 
+  /* run */
   async run(input?: Iterable<A> | AsyncIterable<A>): Promise<A[]> {
     const src = input
-      ? (async function* () {
-          for await (const i of input) yield i;
-        })()
+      ? (async function* () { for await (const i of input) yield i; })()
       : asyncEmpty<A>();
+
     const out: A[] = [];
     for await (const item of this.stage(src, this.opts)) out.push(item);
     return out;
   }
 }
 
-async function* asyncEmpty<T>() {
-  /* yields nothing */
-}
+async function* asyncEmpty<T>() { /* no-op */ }

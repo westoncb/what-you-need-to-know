@@ -104,6 +104,9 @@ importers:
 
   packages/observer-ui:
     dependencies:
+      '@wyntn/common':
+        specifier: workspace:*
+        version: link:../common
       react:
         specifier: ^19.1.0
         version: 19.1.0
