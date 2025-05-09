@@ -125,26 +125,27 @@ export function StageBoard() {
       <div style={styles.header}>
         <div style={styles.titleRow}>
           <h1 style={styles.title}>Flow Observer</h1>
-          <div style={styles.refreshTime}>
-            Last updated: {refreshTime.toLocaleTimeString()}
+
+          <div style={styles.statsContainer}>
+            <div style={styles.statBox}>
+              <div style={styles.statValue}>{totalCalls}</div>
+              <div style={styles.statLabel}>Total Calls</div>
+            </div>
+
+            {runningCalls > 0 && (
+              <div style={{...styles.statBox, ...styles.runningStatBox}}>
+                <div style={{...styles.statValue, color: "#1976d2"}}>{runningCalls}</div>
+                <div style={{...styles.statLabel, color: "#1976d2"}}>Running</div>
+              </div>
+            )}
+
           </div>
         </div>
         <div style={styles.subtitle}>
           Monitoring {stages.size} stages with {activeStages} active
         </div>
-
-        <div style={styles.statsContainer}>
-          <div style={styles.statBox}>
-            <div style={styles.statValue}>{totalCalls}</div>
-            <div style={styles.statLabel}>Total Calls</div>
-          </div>
-
-          {runningCalls > 0 && (
-            <div style={{...styles.statBox, ...styles.runningStatBox}}>
-              <div style={{...styles.statValue, color: "#1976d2"}}>{runningCalls}</div>
-              <div style={{...styles.statLabel, color: "#1976d2"}}>Running</div>
-            </div>
-          )}
+        <div style={styles.refreshTime}>
+          Last updated: {refreshTime.toLocaleTimeString()}
         </div>
       </div>
 
