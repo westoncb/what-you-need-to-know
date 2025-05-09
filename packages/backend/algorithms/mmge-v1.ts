@@ -16,7 +16,7 @@
 
 import { DB, NewsItem }          from "@wyntn/common/src/db";
 import { Flow, setLogger }                  from "@wyntn/common/src/t-flow/flow";
-import { ChatMsg }               from "@wyntn/common/src/t-flow/openrouter";
+import { ChatMsg }               from "@wyntn/common/src/t-flow/llm";
 import { startWsServer } from "../ws-server";
 
 

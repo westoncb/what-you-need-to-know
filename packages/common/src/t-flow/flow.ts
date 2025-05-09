@@ -1,4 +1,4 @@
-import { call, ChatMsg, CallOpts } from "./openrouter";
+import { call, ChatMsg, CallOpts } from "./llm";
 import { Semaphore }               from "./flow-utils";
 
 import {
