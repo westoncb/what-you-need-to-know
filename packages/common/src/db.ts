@@ -89,9 +89,72 @@ export class DB {
     stmt.free();
   }
 
-  getNews(day: string): NewsItem[] {
-    const res = this.db.exec(`SELECT * FROM news_items WHERE day=? ORDER BY src,id`, [day]);
-    return res[0]?.values.map((v) => Object.fromEntries(res[0].columns.map((c, i) => [c, v[i]]))) as NewsItem[] ?? [];
+  // inside your DB class
+  getNews(
+    day: string,
+    limit: number = Number.POSITIVE_INFINITY,
+    sources?: string[],
+  ): NewsItem[] {
+    /* ---------- pull rows ------------------------------------------------ */
+
+    // Build the SQL and params list
+    const [sql, params] = (() => {
+      if (sources?.length) {
+        const placeholders = sources.map(() => "?").join(",");
+        return [
+          `SELECT * FROM news_items
+           WHERE day = ? AND src IN (${placeholders})
+           ORDER BY src, id`,           // order within a source is deterministic
+          [day, ...sources],
+        ] as const;
+      }
+      return [
+        `SELECT * FROM news_items
+         WHERE day = ?
+         ORDER BY src, id`,
+        [day],
+      ] as const;
+    })();
+
+    const res = this.db.exec(sql, params);
+
+    const rows =
+      res[0]?.values.map((v) =>
+        Object.fromEntries(res[0].columns.map((c, i) => [c, v[i]]))
+      ) as NewsItem[] ?? [];
+
+    if (!rows.length) return []; // early exit
+
+    /* ---------- bucket rows by source ------------------------------------ */
+
+    const buckets: Record<string, NewsItem[]> = {};
+    for (const row of rows) {
+      (buckets[row.src] ??= []).push(row);
+    }
+
+    /* ---------- round-robin selection ------------------------------------ */
+
+    const order = sources?.length
+      ? [...sources]                      // preserve caller’s order
+      : Object.keys(buckets).sort();      // deterministic fallback
+
+    const output: NewsItem[] = [];
+    while (output.length < limit) {
+      let anyLeft = false;
+
+      for (const src of order) {
+        const bucket = buckets[src];
+        if (bucket?.length) {
+          output.push(bucket.shift()!);
+          anyLeft = true;
+          if (output.length === limit) break;
+        }
+      }
+
+      if (!anyLeft) break; // all buckets exhausted
+    }
+
+    return output;
   }
 
   writeReport(day: string, llm: string, stage: Stage, content: string, ver="v1.0") {
