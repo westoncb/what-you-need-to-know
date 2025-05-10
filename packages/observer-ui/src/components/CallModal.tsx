@@ -17,9 +17,16 @@ export function CallModal({ call, section, onClose }: Props) {
     section === "prompt" ? call.prompt :
     call.error ?? call.output;
 
-  const formattedContent = typeof content === 'object' ?
-    JSON.stringify(content, null, 2) :
-    String(content);
+  // Format the content more intelligently
+  const formatContent = (content) => {
+    if (typeof content !== 'object') {
+      return String(content);
+    }
+
+    return JSON.stringify(content, null, 2);
+  };
+
+  const formattedContent = formatContent(content);
 
   const title = section === "input" ? "Input" :
                 section === "prompt" ? "Prompt" :
@@ -65,19 +72,85 @@ export function CallModal({ call, section, onClose }: Props) {
     return date.toLocaleTimeString() + "." + date.getMilliseconds().toString().padStart(3, '0');
   };
 
-  const renderSyntaxHighlightedJSON = () => {
-    if (typeof content !== 'object') return formattedContent;
+  // Process the content for rendering
+  const processContentForDisplay = () => {
+    if (typeof content !== 'object') {
+      // Handle simple string content - preserve whitespace and line breaks
+      return formattedContent;
+    }
 
     try {
-      // Simple JSON syntax highlighting
-      return formattedContent
-        .replace(/"([^"]+)":/g, '<span style="color: #80cbc4;">"$1"</span>:')
-        .replace(/"(true|false|null)"/g, '<span style="color: #7986cb;">$1</span>')
-        .replace(/: "([^"]*)"/g, ': <span style="color: #c3e88d;">"$1"</span>')
-        .replace(/: ([0-9]+)/g, ': <span style="color: #f78c6c;">$1</span>');
+      // Handle JSON content with a custom renderer that processes string values
+      const jsonObj = typeof content === 'string' ? JSON.parse(content) : content;
+      return renderJSONWithFormattedStrings(jsonObj);
     } catch (e) {
       return formattedContent;
     }
+  };
+
+  // Render JSON with special handling for string values
+  const renderJSONWithFormattedStrings = (obj, indent = 0) => {
+    const indentStr = ' '.repeat(indent * 2);
+    const nextIndentStr = ' '.repeat((indent + 1) * 2);
+
+    if (obj === null) {
+      return `<span style="color: #7986cb;">null</span>`;
+    }
+
+    if (typeof obj === 'boolean') {
+      return `<span style="color: #7986cb;">${obj}</span>`;
+    }
+
+    if (typeof obj === 'number') {
+      return `<span style="color: #f78c6c;">${obj}</span>`;
+    }
+
+    if (typeof obj === 'string') {
+      // Process string to render newlines and other format characters
+      const processed = obj
+        // Escape HTML special chars first
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        // Handle escaped sequences - convert them to their actual representation
+        .replace(/\\n/g, '<br>')
+        .replace(/\\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;')
+        .replace(/\\"/g, '"')
+        .replace(/\\'/g, "'")
+        .replace(/\\\\/g, '\\');
+
+      return `<span style="color: #c3e88d;">"</span><span class="string-content">${processed}</span><span style="color: #c3e88d;">"</span>`;
+    }
+
+    if (Array.isArray(obj)) {
+      if (obj.length === 0) return '[]';
+
+      let result = `[\n`;
+      for (let i = 0; i < obj.length; i++) {
+        result += `${nextIndentStr}${renderJSONWithFormattedStrings(obj[i], indent + 1)}`;
+        if (i < obj.length - 1) result += ',';
+        result += '\n';
+      }
+      result += `${indentStr}]`;
+      return result;
+    }
+
+    if (typeof obj === 'object') {
+      const keys = Object.keys(obj);
+      if (keys.length === 0) return '{}';
+
+      let result = `{\n`;
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        result += `${nextIndentStr}<span style="color: #80cbc4;">"${key}"</span>: ${renderJSONWithFormattedStrings(obj[key], indent + 1)}`;
+        if (i < keys.length - 1) result += ',';
+        result += '\n';
+      }
+      result += `${indentStr}}`;
+      return result;
+    }
+
+    return String(obj);
   };
 
   const styles = {
@@ -191,12 +264,21 @@ export function CallModal({ call, section, onClose }: Props) {
   const [buttonHover, setButtonHover] = useState(null);
   const [closeHover, setCloseHover] = useState(false);
 
+  // Custom CSS for string display
+  const additionalCSS = `
+    .string-content {
+      white-space: pre-wrap;
+      color: #c3e88d;
+    }
+  `;
+
   return (
     <div
       ref={modalRef}
       style={styles.overlay}
       onClick={onClose}
     >
+      <style>{additionalCSS}</style>
       <div
         style={styles.modal}
         onClick={e => e.stopPropagation()}
@@ -230,14 +312,10 @@ export function CallModal({ call, section, onClose }: Props) {
         </div>
 
         <div style={styles.contentContainer} ref={contentRef}>
-          {typeof content === 'object' ? (
-            <pre
-              style={styles.pre}
-              dangerouslySetInnerHTML={{ __html: renderSyntaxHighlightedJSON() }}
-            />
-          ) : (
-            <pre style={styles.pre}>{formattedContent}</pre>
-          )}
+          <pre
+            style={styles.pre}
+            dangerouslySetInnerHTML={{ __html: processContentForDisplay() }}
+          />
         </div>
 
         <div style={styles.controls}>
