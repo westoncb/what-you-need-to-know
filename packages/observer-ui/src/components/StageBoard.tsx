@@ -111,7 +111,8 @@ export function StageBoard() {
       height: "100%",
       color: "#999",
       fontSize: "16px",
-      padding: "40px"
+      padding: "40px",
+      flexGrow: 1
     },
     noStagesIcon: {
       fontSize: "32px",

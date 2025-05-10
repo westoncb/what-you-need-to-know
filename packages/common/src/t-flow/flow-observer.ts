@@ -94,6 +94,19 @@ export function registerStage(
   });
 }
 
+export function stageMeta(
+  opts : unknown,                              // << accept anything
+  extra: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const obj = opts as Record<string, unknown>; // 1-line cast
+  const filtered = Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => typeof v !== "function"),
+  );
+  return { ...filtered, ...extra };
+}
+
+
+
 /* called by wrappers / instrumentStage */
 export function startCall(
   stageId: string,
@@ -191,9 +204,13 @@ export function instrumentStage<I, O>(
       /* batch mode: one call for entire src */
       const started = Date.now();
       const cid     = startCall(stageId, 0, "[batch]");
+      const batchItems = [];
       try {
-        for await (const o of inner(src, opts)) yield o;
-        endCall(cid, true, "[batch-end]", undefined, started);
+        for await (const o of inner(src, opts)){
+          batchItems.push(o);
+          yield o
+        };
+        endCall(cid, true, "[batch-end]" + batchItems.join("\n"), undefined, started);
       } catch (err) {
         endCall(
           cid, false, undefined,

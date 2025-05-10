@@ -1,4 +1,4 @@
-import { run } from "../algorithms/mmge-v1";
+import { run } from "../algorithms/algo-v1";
 
 (async () => {
   try {

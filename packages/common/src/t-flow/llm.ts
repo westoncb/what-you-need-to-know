@@ -11,19 +11,41 @@ export interface ChatMsg {
   content: string;
 }
 
-export interface CallOpts<T = string> {
-  /* LLM behaviour */
-  temperature?: number;                     // default 0.7
+export interface TransformOpts<
+  Out = string,
+  Src = unknown,
+  Pay = Src            // “payload” after pre() transforms
+> {
+  /* Model selection & low-level knobs */
+  model: string;
+  temperature?: number;
   max_tokens?: number;
-  response_format?: { type: "json_object" };/* strict-JSON mode */
+  response_format?: { type: "json_object" };
 
   /* Reliability */
-  retries?: number;                         // default 3
-  abortAfter?: number;                      // ms timeout
-  backoff?: (attempt: number) => number;    // override back-off
+  retries?: number;
+  abortAfter?: number;
+  backoff?: (attempt: number) => number;
 
-  /* Post-processing */
-  parse?: (raw: string) => T;               // text -> typed value
+  /* High-level hooks */
+  /**
+   * pre:  Src → Pay       (optional)
+   *       Produce the payload you’ll build the prompt from.
+   */
+  pre?: (src: Src) => Pay;
+
+  /**
+   * prompt: Pay → ChatMsg[]
+   *         Turn the payload into the actual prompt.
+   */
+  prompt: (pay: Pay) => ChatMsg[];
+
+  /**
+   * post: rawText × Src × Pay  →  Out   (optional)
+   *       Parse / trim / merge with original item as you please.
+   *       If omitted, raw string is returned.
+   */
+  post?: (raw: string, src: Src, pay: Pay) => Out;
 }
 
 export interface LLMResult<T = string> {
@@ -49,73 +71,57 @@ const defaultBackoff = (attempt: number) =>
 /* -------------------------------------------------------------------- */
 /* Core wrapper                                                         */
 /* -------------------------------------------------------------------- */
-export async function call<T = string>(
-  model: string,
-  messages: ChatMsg[],
-  opts: CallOpts<T> = {},
-): Promise<LLMResult<T>> {
-
+export async function transform<Out = string, Src = unknown, Pay = Src>(
+  src: Src,
+  opts: TransformOpts<Out, Src, Pay>,
+): Promise<LLMResult<Out>> {
   const {
-    temperature = 0.7,
-    max_tokens,
-    response_format,
-    retries      = 3,
-    abortAfter,
-    backoff      = defaultBackoff,
-    parse,
+    model, temperature = 0.7, max_tokens, response_format,
+    retries = 3, abortAfter, backoff = defaultBackoff,
+    pre, prompt, post,
   } = opts;
 
+  /* -------- build prompt -------- */
+  const payload  = pre ? pre(src) : (src as unknown as Pay);
+  const messages = prompt(payload);
+
+  /* -------- identical retry loop -------- */
   const controller = new AbortController();
-  if (abortAfter) {
-    // unref() so the timer doesn't keep Node alive (optional)
-    setTimeout(() => controller.abort(), abortAfter).unref?.();
-  }
+  if (abortAfter) setTimeout(() => controller.abort(), abortAfter).unref?.();
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetch(ENDPOINT, {
-        method: "POST",
-        signal: controller.signal,
+        method : "POST",
+        signal : controller.signal,
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${API_KEY}`,
+          Authorization : `Bearer ${API_KEY}`,
         },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature,
-          max_tokens,
+        body   : JSON.stringify({
+          model, messages, temperature, max_tokens,
           ...(response_format ? { response_format } : {}),
         }),
       });
 
       const rawBody = await res.text();
+      if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${rawBody}`);
 
-      if (!res.ok) {
-        throw new Error(`OpenRouter ${res.status}: ${rawBody}`);
-      }
+      const data    = JSON.parse(rawBody);
+      const rawText = String(data.choices[0].message.content);
 
-      const data     = JSON.parse(rawBody);
-      const rawText  = String(data.choices[0].message.content);
-
+      /* -------- post-processing -------- */
       let content: any = rawText;
-      if (parse) {
-        try {
-          content = parse(rawText);
-        } catch (e) {
-          throw new Error(`Parse error: ${(e as Error).message}`);
-        }
+      if (post) {
+        try       { content = post(rawText, src, payload); }
+        catch (e) { throw new Error(`post() error: ${(e as Error).message}`); }
       }
 
       return { ok: true, content, raw: rawText };
     } catch (err) {
-      if (attempt === retries) {
-        return { ok: false, raw: "", error: err as Error };
-      }
+      if (attempt === retries) return { ok: false, raw: "", error: err as Error };
     }
-    await new Promise((r) => setTimeout(r, backoff(attempt)));
+    await new Promise(r => setTimeout(r, backoff(attempt)));
   }
-
-  /* Should never reach here */
   return { ok: false, raw: "", error: new Error("unreachable") };
 }
