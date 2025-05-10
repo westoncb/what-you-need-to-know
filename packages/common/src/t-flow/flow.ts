@@ -330,7 +330,7 @@ export class Flow<A> {
     /* ---------- 1. Map: one LLM call per item ---------- */
     llmMap<B>(
       promptFn: (a: A) => ChatMsg[],
-      opts: TransformOpts<B, A> & { model: string },
+      opts: Omit<TransformOpts<B, A>, "prompt"> & { model: string },
       c = 8,
     ): Flow<B> {
       const fullOpts = { ...opts, prompt: promptFn };
@@ -340,7 +340,7 @@ export class Flow<A> {
     /* ---------- 2. Filter: judge KEEP / SKIP ---------- */
     llmFilter(
       judgePrompt: (a: A) => ChatMsg[],
-      opts: TransformOpts<boolean, A> & { model: string },
+      opts: Omit<TransformOpts<B, A>, "prompt"> & { model: string },
       c = 8,
     ): Flow<A> {
       return new Flow(
@@ -353,7 +353,7 @@ export class Flow<A> {
     llmSelect(
       k: number,
       duelPrompt: (a: A, b: A) => ChatMsg[],
-      opts: TransformOpts<A, { a: A; b: A }> & { model: string },
+      opts: Omit<TransformOpts<B, A>, "prompt"> & { model: string },
       c = 4,
     ): Flow<A> {
       return new Flow(
@@ -366,7 +366,7 @@ export class Flow<A> {
     async llmReduce<B>(
       foldPrompt: (acc: B, a: A) => ChatMsg[],
       seed: B,
-      opts: TransformOpts<B, A> & { model: string },
+      opts: Omit<TransformOpts<B, A>, "prompt"> & { model: string },
     ): Promise<B> {
       let acc = seed;
 
