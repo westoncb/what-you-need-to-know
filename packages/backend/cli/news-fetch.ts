@@ -132,13 +132,15 @@ async function fetchArxiv(day: string): Promise<NewsItem[]> {
   const oneDayAgo = new Date(now);
   oneDayAgo.setHours(now.getHours() - 24);
 
-  console.log(`Filtering for papers published after: ${oneDayAgo.toISOString()}`);
+  console.log(`Retrieved ${entries.length} abstracts from Arxiv.`);
+
+  // console.log(`Filtering for papers published after: ${oneDayAgo.toISOString()}`);
 
   return entries
-    .filter((e: any) => {
-      const pubDate = new Date(e.published);
-      return pubDate >= oneDayAgo;
-    })
+    // .filter((e: any) => {
+    //   const pubDate = new Date(e.published);
+    //   return pubDate >= oneDayAgo;
+    // })
     .map((e: any) => toNewsItemArxiv(e, day));
 }
 
