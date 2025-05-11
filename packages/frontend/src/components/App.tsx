@@ -1,33 +1,55 @@
 import React, { useState, useEffect } from "react";
-import "./article-style.css";
+import Article from "./Article";
+import "./App.css";
+
+const AI_MODELS = [
+  {
+    id: "claude-3-7",
+    name: "Claude Sonnet 3.7",
+    image: "/images/claude-3-7.png",
+    banner: "/images/claude-banner.jpg" // Path to the banner you generated
+  },
+  {
+    id: "gpt-4-5",
+    name: "GPT-4.5",
+    image: "/images/gpt-4-5.png",
+    banner: "/images/gpt-banner.jpg" // You'll need to generate this
+  },
+  {
+    id: "gemini-flash",
+    name: "Gemini Flash 2.5",
+    image: "/images/gemini-flash.png",
+    banner: "/images/gemini-banner.jpg" // You'll need to generate this
+  },
+];
 
 export default function App() {
-  const [report, setReport] = useState(null);
+  const [activeTab, setActiveTab] = useState(AI_MODELS[0].id);
+  const [reports, setReports] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   // Helper function to get local date in YYYY-MM-DD format
   const getLocalDateString = () => {
-    // Get current date in local timezone (Phoenix, AZ - MST/PDT)
     const now = new Date();
-
-    // Format the date as YYYY-MM-DD using local timezone
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
-
     return `${year}-${month}-${day}`;
   };
 
   useEffect(() => {
-    const fetchReport = async () => {
+    const fetchReports = async () => {
       try {
         setLoading(true);
-
-        // Get date in local timezone format
         const dateString = getLocalDateString();
-        console.log(`Fetching report for local date: ${dateString}`);
+        console.log(`Fetching reports for local date: ${dateString}`);
 
+        // Fetch reports for all models
+        const reportData = {};
+
+        // For demonstration, we're just loading one report and duplicating it
+        // In production, you'd fetch different reports for different models
         const response = await fetch(`/data/${dateString}.json`);
 
         if (!response.ok) {
@@ -35,37 +57,80 @@ export default function App() {
         }
 
         const data = await response.json();
-        setReport(data);
+
+        // Duplicate the same report for all models (for demonstration)
+        AI_MODELS.forEach(model => {
+          const fixedItems = []
+          console.log("DATA", data)
+          data.items.forEach(item => {
+            const subItem = item.item;
+            console.log("sub:",subItem)
+            fixedItems.push({ context: item.context, overview: item.overview, why: item.why, ...subItem});
+          });
+          reportData[model.id] = {...data, items: [...fixedItems]};
+        });
+
+        setReports(reportData);
         setLoading(false);
       } catch (err) {
-        console.error("Error loading report:", err);
+        console.error("Error loading reports:", err);
         setError(err.message);
         setLoading(false);
       }
     };
 
-    fetchReport();
+    fetchReports();
   }, []);
 
-  // If loading, show minimal loading indicator
-  if (loading) {
-    return <div className="loading">Loading today's report...</div>;
-  }
+  // In App.jsx, update the return statement to:
 
-  // If error, show minimal error message
-  if (error) {
-    return <div className="error">Could not load report: {error}</div>;
-  }
+  return (
+    <div className="app-container">
+      <div className="app-content">
+        <div className="title-bar">
+          <div className="title-bar-content">
+            <div className="app-title">ai-hourly-news</div>
+            <a href="/about" className="about-link">about</a>
+          </div>
+        </div>
 
-  // If we have a report, render it
-  if (report && report.narrative_html) {
-    return (
-      <div
-        dangerouslySetInnerHTML={{ __html: report.narrative_html }}
-      />
-    );
-  }
+        <div className="tabs-container">
+          <div className="tabs">
+            {AI_MODELS.map((model) => (
+              <button
+                key={model.id}
+                className={`tab ${activeTab === model.id ? 'active' : ''}`}
+                onClick={() => setActiveTab(model.id)}
+              >
+                {/* <img
+                  src={model.image}
+                  alt={model.name}
+                  className="tab-image"
+                /> */}
+                <span className="tab-name">{model.name}</span>
+              </button>
+            ))}
+          </div>
 
-  // Fallback if we have nothing to display
-  return <div>No report available.</div>;
+          <div className="tab-content">
+            {loading ? (
+              <div className="loading-container">
+                <div className="loading-spinner"></div>
+                <p>Loading reports...</p>
+              </div>
+            ) : error ? (
+              <div className="error-message">
+                <h3>Error loading reports</h3>
+                <p>{error}</p>
+              </div>
+            ) : (
+              <div className="article-frame">
+                <Article report={reports[activeTab]} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

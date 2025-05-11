@@ -15,17 +15,17 @@ export const whyPrompt = (item: NewsItem): ChatMsg[] => [
     content:
     `so i'm trying to decide whether to spend more time reading this or not, but i'd like your opinion on whether it'll be worthwhile for me or not. ${profile}
 
-    if it's something at all in this realm or just a "big deal," like people will be talking about it, then i'm probably interested. or even better: if it's something that *should* be a big deal but people are likely to miss!
+        if it's something at all in this realm or just a "big deal," like people will be talking about it, then i'm probably interested. or even better: if it's something that *should* be a big deal but people are likely to miss!
 
-    currently i'm considering this ${item.src === 'hn' ? 'hn story' : 'arxiv paper'} titled "${item.title}"
+        currently i'm considering this ${item.src === 'hn' ? 'hn story' : 'arxiv paper'} titled "${item.title}"
 
-    and i can share the ${item.src === 'hn' ? 'first part of it' : 'abstract'}:
+        and i can share the ${item.src === 'hn' ? 'first part of it' : 'abstract'}:
 
-    ##########################
-    ${item.summary}
-    ##########################
+        ##########################
+        ${item.summary}
+        ##########################
 
-    curious to hear your opinion on this one. please keep it somewhat short, like 3 paragraphs max.`,
+        curious to hear your opinion on this one. please keep it somewhat short, like 3 paragraphs max.`,
   },
 ];
 
@@ -126,20 +126,20 @@ export const makeNarrativePrompt = (model: string) => {
     {
       role: "user",
       content:
-      `hey ${model}, i've got this news/research paper filtering pipeline going and it's produced this set of items for me to learn about today (note: there may be errors or partial data since this comes from an automated system)
+      `i've got this news/research paper filtering pipeline going and it's produced this set of items for me to learn about today (note: there may be errors or partial data since this comes from an automated system)
 
-        —and here's the list:
-        <list>
-        ${bulletList}
-        </list>
+              —and here's the list:
+              <list>
+              ${bulletList}
+              </list>
 
-      please write me a piece to read that weaves the critical new ideas into a kind of "narrative of what happened today". it's important to retain technical details, and you're free to be opinionated in your presentation: i don't want to you just take everything stated in the above items at face value but rather use your judgement about what's most valuable and convey it to me. don't "LARP" though, give it to me real and unadulterated, no fancy packaging or holds barred or linkedin techno-marketing-babble—let's go right to meat of it. maybe a good way of thinking about: you're like Feynman and you've read today's news and i'm a colleague of you're and you're filling me. that's it. you can assume high general technical literacy` ,
+            please give me your take on the items. you're free to be opinionated in your presentation. this is for a highly technical audience likely to jump in and read the papers or other articles themselves but your reads on each will help to guide their attention.` ,
     },
   ];
 }
 
 /* 5 — markup / tagging prompt */
-export function markupPrompt(prose: string): ChatMsg[] {
+export function markupPrompt(prose: string, items: NewsItem[]): ChatMsg[] {
   return [
     {
       role: "system",
@@ -149,7 +149,7 @@ DOCUMENT STRUCTURE:
 - <article class="article"> - Wrap the entire document
   - <h1 class="article-title"> - Main article title
   - <p class="lede"> - Opening summary paragraph
-  - <section class="section"> - Individual content sections
+  - <section class="section" data-source-id="[item-id]"> - Individual content sections with source ID attribute
     - <h2 class="section-title"> - Section title/heading
     - <p> - Regular paragraphs
     - <p class="dropcap"> - First paragraph of each section (will get a drop cap)
@@ -162,13 +162,25 @@ GUIDELINES:
 1. Always wrap the entire document in <article class="article">
 2. Use <h1 class="article-title"> only once for the main title
 3. Each main section should be wrapped in <section class="section">
-4. Mark the first paragraph of each section with class="dropcap"
-5. Use <span class="highlight"> for key phrases to emphasize inline
-6. Use semantic HTML tags appropriately (p, blockquote, ul, li)
-7. Do not use the dropcap class on list items or blockquotes
+4. Add a data-source-id attribute to each section, using the ID from the corresponding source item
+5. Mark the first paragraph of each section with class="dropcap"
+6. Use <span class="highlight"> for key phrases to emphasize inline
+7. Use semantic HTML tags appropriately (p, blockquote, ul, li)
+8. Do not use the dropcap class on list items or blockquotes
+
+SOURCE ITEM LINKING:
+1. For each section, determine which source item it best corresponds to
+2. Add that source item's ID as a data-source-id attribute on the section tag
+3. Do not wrap section titles in anchor tags - we'll handle linking separately
 
 Return valid HTML without <html>, <head>, or <body> tags. Only include the structured content—and please do not alter any of the original language, just mark-up.`,
     },
-    { role: "user", content: prose },
+    { role: "user", content: `
+Here is the article: ${prose}
+
+And here is meta data for each of the source items which were used to write the article:
+
+${JSON.stringify(items.map(i => ({id: i.item.id, title: i.item.title, url: i.item.url})))}
+      `.trim() },
   ];
 }
