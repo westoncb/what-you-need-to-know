@@ -7,7 +7,7 @@ import { startWsServer }         from "../ws-server";
 /* Config                                                             */
 /* ------------------------------------------------------------------ */
 const MODELS = ["openai/gpt-4.1"];
-const TOP_K         = 10;
+const TOP_K         = 5;
 const WHY_CONC      = 8;
 const JUDGE_CONC    = 8;
 const DUEL_CONC     = 4;
@@ -22,16 +22,16 @@ setLogger(startWsServer(4000), { snapshotMs: 500 });
 /* Prompt helpers                                                     */
 /* ------------------------------------------------------------------ */
 
+const profile = `I am interested in software engineering and AI research.`
+
 /* 1a — rationale (“why or why not”) */
 const whyPrompt = (item: NewsItem): ChatMsg[] => [
   {
     role: "user",
     content:
-    `so i'm trying to decide whether to spend more time reading this or not, but i'd like your opinion on whether it'll be worthwhile for me or not. i'm generally interested in CS research, especially as it pertains to ai, and especially for anything that might impact ai product development possibilities or the tech investment landscape. new capabilities for developing products, new market potentials, up and coming players, etc. are all of interest. on the research side, i'm interested in anything with potentially lasting intellectual interest—this could be from any field not just CS; math, bio, electrical engineering, material science, manufacturing and robots—whatever.
+    `so i'm trying to decide whether to spend more time reading this or not, but i'd like your opinion on whether it'll be worthwhile for me or not. ${profile}
 
-    if it's something at all in this realm and just a "big deal," like people will be talking about it, then that should give it a pass as well. or even better: if it's something that *should* be a big deal but people are likely to miss!
-
-    this is one of a bunch of options i've got though and my time is limited, so what i'm really looking for is to get your insight into whether this is likely to be valuable to know about. especially for cases where the implications might be subtle for someone who doesn't fully know surrounding context or details of the field it comes from. the reading i do in this phase of my day is basically around "staying abreast of important developments"; so what i'm hoping is that if it's something i really should't miss, then for you to pursuade me to put the time into reading—and it you think it's probably not significant, to help me prune it early so i can focus on what really matters.
+    if it's something at all in this realm or just a "big deal," like people will be talking about it, then i'm probably interested. or even better: if it's something that *should* be a big deal but people are likely to miss!
 
     currently i'm considering this ${item.src === 'hn' ? 'hn story' : 'arxiv paper'} titled "${item.title}"
 
@@ -41,7 +41,7 @@ const whyPrompt = (item: NewsItem): ChatMsg[] => [
     ${item.summary}
     ##########################
 
-    whether it's theoretical or practical, niche or general—this is all fine; what i'm looking for is quality, and to stay informed. seperating signal from noise and giving attention to serious valuable work and important general occurances. curious to hear your opinion on this one. please keep it somewhat short, like 3 paragraphs max.`,
+    curious to hear your opinion on this one. please keep it somewhat short, like 3 paragraphs max.`,
   },
 ];
 
@@ -56,7 +56,9 @@ const judgePrompt = (rationale: string): ChatMsg[] => [
 
     ${rationale}
 
-    If you think the argument is in *favor* or reading it, respond exactly KEEP.  Otherwise respond exactly SKIP
+    And here is some info on my background: ${profile}
+
+    If you think the argument is *at all* in favor of me reading it, respond exactly KEEP.  Otherwise respond exactly SKIP
     `,
   },
 ];
@@ -98,6 +100,8 @@ const duelPrompt = (a: RationaleItem, b: RationaleItem): ChatMsg[] => [
     content:
     `so i'm trying to decide which of these two articles to read, and i'd like your opinion on which to give priority to. consider the arguments given for each and go with the one that's stronger.
 
+    here are the items to evaluate:
+
     A) ${a.item.title}
        Why: ${a.why}
 
@@ -137,15 +141,14 @@ const makeNarrativePrompt = (model: string) => {
     {
       role: "user",
       content:
-      `hey ${model}, can you give me your take on the folowing? i want you to retain all the important concrete details without glossing over anything, but i also want you to be opinionated. these come from hacker news stories and arxiv abstracts. i know the game, and even in these prestigious outlets (i mean they aren't just random Medium articles) it can still be hard to separate signal from noise. i want your raw opinions on these: what's their upshot, their likely true significance in your estimate
+      `hey ${model}, i've got this news/research paper filtering pipeline going and it's produced this set of items for me to learn about today (note: there may be errors or partial data since this comes from an automated system)
 
-      here's today's list:
-      <recent_events>
-      ${bulletList}
-      </recent_events>
+        —and here's the list:
+        <list>
+        ${bulletList}
+        </list>
 
-      i'm basically looking to separate the chaff from the grain here—or, less archaically, i'm trying to find genuine quality/value as opposed to distraction. each of these items has already passed some filters so i'd like to understand the concrete, specific details of each in addition to getting your no holds barred quality/value assessment. whether the item is "real-world" vs theoretical doesn't matter; only interested in an abstract measure of quality/value of the work. don't be tricked by the language of the presentations—they're basically all going to self-describe as earth-shattering advancements: our task here is to read between the lines. please order your takes where highest quality/value items are presented first.
-      `,
+      please write me a piece to read that weaves the critical new ideas into a kind of "narrative of what happened today". it's important to retain technical details, and you're free to be opinionated in your presentation: i don't want to you just take everything stated in the above items at face value but rather use your judgement about what's most valuable and convey it to me. don't "LARP" though, give it to me real and unadulterated, no fancy packaging or holds barred or linkedin techno-marketing-babble—let's go right to meat of it. you can assume high general technical literacy` ,
     },
   ];
 }
@@ -187,7 +190,7 @@ function bullet(e: Enriched): string {
 async function runForModel(model: string) {
   const db  = new DB(); await db.open();
   const day = todayPhoenix();
-  const raw = await db.getNews(day, 100); await db.close();
+  const raw = await db.getNews(day, 60); await db.close();
   if (!raw.length) { console.log("No news for", day); return; }
 
   const reportArr = await Flow
@@ -214,7 +217,7 @@ async function runForModel(model: string) {
     .llmFilter(
       (o: WhyObj) => judgePrompt(o.why),
       {
-        model: "anthropic/claude-3.5-haiku",
+        model,
         temperature: 0.0,
         post: raw => raw.trim() === "KEEP",
       },
@@ -274,7 +277,7 @@ async function runForModel(model: string) {
     .llmMap<string>(
       makeNarrativePrompt(model),
       {
-        model: "openai/o1",
+        model: "anthropic/claude-3.7-sonnet",
         temperature: 0.7,
         post: raw => raw.trim(),
       },
