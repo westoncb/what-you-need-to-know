@@ -112,50 +112,62 @@ function foldStage<A, B>(
 /* LLM map – one output per item                                      */
 /* ------------------------------------------------------------------ */
 function llmMapStage<A, B, Pay = A>(
-  opts: TransformOpts<B, A, Pay>,   // contains model, prompt, pre, post …
+  opts: TransformOpts<B, A, Pay>,
   concurrency = 8,
 ): Stage<A, B> {
+  const pool     = new Semaphore(concurrency);
+  const stageId  = newStageId();
 
-  const pool    = new Semaphore(concurrency);
-  const stageId = newStageId();
-  const { pre, prompt } = opts;
-
+  /* register with observer ---------------------------- */
   registerStage(
     stageId,
     "llmMap",
     "llm",
-    stageMeta(opts, {concurrency})
+    stageMeta(opts, { concurrency }),
   );
 
   return async function* (src, { onError = defaultOnError } = {}) {
+    const pending: Promise<B>[] = [];     // type B, not void
     let idx = 0;
 
-    for await (const item of src) {
-      /* ---------- build prompt for logging ---------- */
-      const payload  = pre ? pre(item) : (item as unknown as Pay);
-      const messages = prompt(payload);
+    /* launch a single LLM call ------------------------ */
+    async function launch(item: A): Promise<B> {
+      const payload  = opts.pre ? opts.pre(item) : (item as unknown as Pay);
+      const messages = opts.prompt(payload);
 
-      const started  = Date.now();
-      const cid      = startCall(stageId, idx++, item, messages);
+      const started = Date.now();
+      const cid     = startCall(stageId, idx++, item, messages);
 
-      await pool.acquire();
       try {
-        /* ---------- actual transform call ---------- */
         const res = await transform(item, opts);
-        if (!res.ok) throw res.error;
-
         endCall(cid, true, res.content, undefined, started);
-        yield res.content as B;
+        return res.content as B;
       } catch (e) {
         endCall(cid, false, undefined, (e as Error).message, started);
         onError(e as Error, { stage: "llmMap" });
+        /* propagate or swallow — here we swallow and return a dummy */
+        return undefined as unknown as B;
       } finally {
         pool.release();
       }
     }
+
+    /* iterate upstream items -------------------------- */
+    for await (const item of src) {
+      await pool.acquire();
+      pending.push(launch(item));
+
+      /* cap reached → wait for oldest promise to settle */
+      if (pending.length >= concurrency) {
+        const first = pending.shift()!;
+        yield await first;               // preserve original order
+      }
+    }
+
+    /* drain leftovers -------------------------------- */
+    for (const p of pending) yield await p;
   };
 }
-
 
 /* ------------------------------------------------------------------ */
 /* LLM filter – yields input only if judge keeps it                   */

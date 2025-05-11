@@ -53,7 +53,7 @@ function toNewsItemArxiv(entry: any, day: string): NewsItem {
 async function fetchHN(day: string): Promise<NewsItem[]> {
   console.log("Fetching HN stories...");
   const url =
-    "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30";
+    "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=50";
   const json: HNSearchResponse = await fetch(url).then((r) => r.json());
 
   // Create our content extractor instance

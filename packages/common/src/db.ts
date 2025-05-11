@@ -12,6 +12,25 @@ export type Stage  = "shard" | "synthesis" | "final";
 export interface NewsItem   { id:string; src:Source; day:string; title:string; url:string; summary:string }
 export interface MMGEReport { day:string; llm_id:string; algo_version:string; stage:Stage; content:string }
 
+export interface DailyReport {
+  generated_at  : string;
+  model         : string;
+  headline      : string;
+
+  narrative_html: string;     // the “lede” / hero – already marked-up
+
+  /** Cards that appear below the narrative */
+  items: Array<{
+    id      : string;
+    src     : string;         // "hn", "arxiv", …
+    title   : string;
+    url     : string;
+    summary : string;         // raw or lightly cleaned
+    /** plain explanation paragraph(s) */
+    context : string;
+  }>;
+}
+
 export class DB {
   private SQL!: SqlJsStatic;
   private db!: SQL;
@@ -157,12 +176,38 @@ export class DB {
     return output;
   }
 
-  writeReport(day: string, llm: string, stage: Stage, content: string, ver="v1.0") {
+  /* ---------- write typed report ----------------------------------- */
+  writeFinalReport(
+    day   : string,
+    model : string,
+    rep   : DailyReport,
+    ver   = "v1.0",
+  ) {
+    this.writeReport(day, model, "final", rep, ver);
+  }
+
+  /* -------------------------------------------------------------- */
+  /* generic writer – handles any stage                             */
+  /* -------------------------------------------------------------- */
+  writeReport(
+    day    : string,
+    llm    : string,
+    stage  : Stage,
+    content: unknown,
+    ver    = "v1.0",
+  ) {
+    const payload = typeof content === "string"
+      ? content
+      : JSON.stringify(content);
+
+    /* five positional ? placeholders in same order as column list */
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO mmge_reports (day,llm_id,algo_version,stage,content)
-      VALUES (:day,:llm,:ver,:stage,:content)
+      INSERT OR REPLACE INTO mmge_reports
+        (day, llm_id, algo_version, stage, content)
+      VALUES (?,  ?,  ?,  ?,  ?)
     `);
-    stmt.run({ day, llm, ver, stage, content });
+
+    stmt.run([day, llm, ver, stage, payload]);
     stmt.free();
   }
 
@@ -173,4 +218,35 @@ export class DB {
     );
     return res[0]?.values.map((v) => Object.fromEntries(res[0].columns.map((c, i) => [c, v[i]]))) as MMGEReport[] ?? [];
   }
+
+  /* ---------- convenient day-level fetch --------------------------- */
+  /**
+   * Returns the stored DailyReport for a given day (and optional model).
+   * If no record is found, it returns null.
+   */
+   getFinalReport(day: string, model?: string): DailyReport | null {
+     const sql = `
+       SELECT content FROM mmge_reports
+       WHERE day = ? AND stage = 'final' ${model ? "AND llm_id = ?" : ""}
+       ORDER BY llm_id LIMIT 1
+     `;
+     const rows = this.db.exec(sql, model ? [day, model] : [day]);
+
+     if (!rows.length) return null;
+     return JSON.parse(rows[0].values[0][0] as string) as DailyReport;
+   }
+
+   /* ---------- utility: recent days with a final report ------------- */
+   getRecentFinalDays(limit = 30): string[] {
+     const res = this.db.exec(
+       `SELECT DISTINCT day
+          FROM mmge_reports
+         WHERE stage = 'final'
+         ORDER BY day DESC
+         LIMIT ?`,
+       [limit]
+     );
+     return res[0]?.values.map(r => r[0] as string) ?? [];
+   }
+
 }
