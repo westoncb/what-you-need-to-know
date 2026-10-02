@@ -6,20 +6,20 @@ const AI_MODELS = [
   {
     id: "claude-3-7",
     name: "Claude Sonnet 3.7",
-    image: "/images/claude-3-7.png",
-    banner: "/images/claude-banner.jpg" // Path to the banner you generated
+    image: `${import.meta.env.BASE_URL}images/claude-3-7.png`,
+    banner: `${import.meta.env.BASE_URL}images/claude-banner.jpg` // Path to the banner you generated
   },
   {
     id: "gpt-4-5",
     name: "GPT-4.5",
-    image: "/images/gpt-4-5.png",
-    banner: "/images/gpt-banner.jpg" // You'll need to generate this
+    image: `${import.meta.env.BASE_URL}images/gpt-4-5.png`,
+    banner: `${import.meta.env.BASE_URL}images/gpt-banner.jpg` // You'll need to generate this
   },
   {
     id: "gemini-flash",
     name: "Gemini Flash 2.5",
-    image: "/images/gemini-flash.png",
-    banner: "/images/gemini-banner.jpg" // You'll need to generate this
+    image: `${import.meta.env.BASE_URL}images/gemini-flash.png`,
+    banner: `${import.meta.env.BASE_URL}images/gemini-banner.jpg` // You'll need to generate this
   },
 ];
 
@@ -50,7 +50,7 @@ export default function App() {
 
         // For demonstration, we're just loading one report and duplicating it
         // In production, you'd fetch different reports for different models
-        const response = await fetch(`/data/${dateString}.json`);
+        const response = await fetch(`${import.meta.env.BASE_URL}data/${dateString}.json`);
 
         if (!response.ok) {
           throw new Error(`Failed to fetch report: ${response.status}`);
@@ -90,7 +90,7 @@ export default function App() {
         <div className="title-bar">
           <div className="title-bar-content">
             <div className="app-title">ai-hourly-news</div>
-            <a href="/about" className="about-link">about</a>
+            <a href={`${import.meta.env.BASE_URL}about`} className="about-link">about</a>
           </div>
         </div>
 

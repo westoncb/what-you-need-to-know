@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import LightweightModal from "./LightweightModal";
+import LightweightModal from "./LightWeightModal";
 import "./ItemList.css";
 
 const ItemList = ({ items = [] }) => {

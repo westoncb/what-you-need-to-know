@@ -4,7 +4,7 @@ import './ModelBanner.css';
 const ModelBanner = ({ model }) => {
   // Default values in case model props aren't fully provided
   const modelName = model?.name || 'AI Model';
-  const imagePath = model?.banner || '/images/default-banner.jpg';
+  const imagePath = model?.banner || `${import.meta.env.BASE_URL}images/default-banner.jpg`;
 
   return (
     <div className="model-stamp">

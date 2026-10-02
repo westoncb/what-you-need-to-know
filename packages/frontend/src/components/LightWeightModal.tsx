@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import "./LightweightModal.css";
+import "./LightWeightModal.css";
 
 const LightweightModal = ({ isOpen, onClose, title, content }) => {
   const modalRef = useRef(null);
