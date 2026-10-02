@@ -2,11 +2,20 @@
    Flow Observer  – snapshot-only, calls/errors counters
 ------------------------------------------------------------------- */
 import type { ChatMsg } from "./llm";
+import type { LLMError } from "./flow-utils";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
 /* ------------------------------------------------------------------ */
-export interface CallInfo {
+export interface CallDetails {
+  attempts?: number;
+  raw?: string;
+  disposition?: "skipped" | "fallback" | "propagated";
+  errorInfo?: Pick<LLMError, "kind" | "status" | "code" | "providerCode" | "errorType" | "retryable">;
+  recoveryError?: string;
+}
+
+export interface CallInfo extends CallDetails {
   id      : string;
   idx     : number;
   input   : unknown;
@@ -56,6 +65,7 @@ export function setLogger(
   fn: FlowLogger | null,
   { snapshotMs = 100 }: { snapshotMs?: number } = {},
 ) {
+  if (LOGGER && !fn) emitSnapshot(); // Flush completions before a CLI closes its logger.
   LOGGER  = fn;
   SNAP_MS = snapshotMs;
 
@@ -100,7 +110,8 @@ export function stageMeta(
 ): Record<string, unknown> {
   const obj = opts as Record<string, unknown>; // 1-line cast
   const filtered = Object.fromEntries(
-    Object.entries(obj).filter(([, v]) => typeof v !== "function"),
+    Object.entries(obj).flatMap(([key, value]) =>
+      typeof value !== "function" ? [[key, value]] : key === "onFailure" ? [[key, "callback"]] : []),
   );
   return { ...filtered, ...extra };
 }
@@ -128,24 +139,40 @@ export function startCall(
   return cid;
 }
 
+export function setCallPrompt(callId: string, prompt: ChatMsg[]) {
+  const stageId = CALL_TO_STAGE.get(callId);
+  if (!stageId) return;
+  const call = STAGES.get(stageId)?.callList.find(call => call.id === callId);
+  if (call?.state === "run") call.prompt = prompt;
+}
+
 export function endCall(
   callId : string,
   ok     : boolean,
   output?: unknown,
   error ?: string,
   started?: number,
+  details: CallDetails = {},
 ) {
   const stageId = CALL_TO_STAGE.get(callId);
   if (!stageId) return;
   const stage = STAGES.get(stageId)!;
 
   const c = stage.callList.find(x => x.id === callId);
-  if (c) {
+  if (!c || c.state !== "run") return;
+  {
     c.output  = output;
     c.error   = error;
     c.state   = ok ? "done" : "error";
-    c.latency = started ? Date.now() - started : undefined;
+    c.latency = Date.now() - (started ?? c.started);
+    const { errorInfo, ...rest } = details;
+    Object.assign(c, rest);
+    if (errorInfo) {
+      const { kind, status, code, providerCode, errorType, retryable } = errorInfo;
+      c.errorInfo = { kind, status, code, providerCode, errorType, retryable };
+    }
   }
+  CALL_TO_STAGE.delete(callId);
 
   if (!ok) stage.errors++;
   stage.openCalls--;
@@ -177,46 +204,38 @@ export function instrumentStage<I, O>(
   const stageId = newStageId();
   registerStage(stageId, name, kind, cfg);
 
-  /* return wrapper generator */
   return async function* (src: AsyncIterable<I>, opts?: unknown) {
     if (perItem) {
       let idx = 0;
       for await (const item of src) {
-        const started = Date.now();
-        const cid     = startCall(stageId, idx++, item);
-
+        const cid = startCall(stageId, idx++, item);
+        let output: O | undefined;
         try {
-          for await (const o of inner(
-            (async function* () { yield item; })(), opts))
-          {
-            yield o;
-            endCall(cid, true, o, undefined, started);
+          for await (const value of inner((async function* () { yield item; })(), opts)) {
+            output = value;
+            yield value;
           }
-        } catch (err) {
-          endCall(
-            cid, false, undefined,
-            (err as Error).message, started,
-          );
-          throw err;
+        } catch (error) {
+          endCall(cid, false, undefined, String(error instanceof Error ? error.message : error));
+          throw error;
+        } finally {
+          // Complete even when a filter emits nothing or the consumer stops early.
+          endCall(cid, true, output);
         }
       }
     } else {
-      /* batch mode: one call for entire src */
-      const started = Date.now();
-      const cid     = startCall(stageId, 0, "[batch]");
-      const batchItems = [];
+      const cid = startCall(stageId, 0, "[batch]");
+      const outputs: O[] = [];
       try {
-        for await (const o of inner(src, opts)){
-          batchItems.push(o);
-          yield o
-        };
-        endCall(cid, true, "[batch-end]" + batchItems.join("\n"), undefined, started);
-      } catch (err) {
-        endCall(
-          cid, false, undefined,
-          (err as Error).message, started,
-        );
-        throw err;
+        for await (const value of inner(src, opts)) {
+          outputs.push(value);
+          yield value;
+        }
+      } catch (error) {
+        endCall(cid, false, undefined, String(error instanceof Error ? error.message : error));
+        throw error;
+      } finally {
+        endCall(cid, true, outputs);
       }
     }
   };
