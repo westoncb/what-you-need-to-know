@@ -1,3 +1,4 @@
+import { loadProfile } from "./profile";
 import { NewsItem }          from "@wyntn/common/src/db";
 import { ChatMsg }               from "@wyntn/common/src/t-flow/llm";
 export interface WhyObj   { item: NewsItem; why: string }
@@ -6,7 +7,7 @@ export interface Enriched extends EnhancedItem { context: string}
 export interface RationaleItem { item: NewsItem; why: string }
 export interface Enriched extends RationaleItem { context: string}
 
-export const profile = `I am interested in software engineering and AI research.`
+export const profile = loadProfile();
 
 /* 1a — rationale (“why or why not”) */
 export const whyPrompt = (item: NewsItem): ChatMsg[] => [
