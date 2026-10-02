@@ -25,15 +25,15 @@ export const modelConfig: {
   writers: WriterConfig[];
 } = {
   stages: {
-    readingRationale: { model: "openai/gpt-4.1", temperature: 0.4, max_tokens: 800 },
-    relevanceJudge: { model: "openai/gpt-4.1", temperature: 0 },
-    sourceOverview: { model: "openai/gpt-4.1", temperature: 0.4, max_tokens: 1000 },
-    articleSelection: { model: "openai/gpt-4.1", temperature: 0 },
+    readingRationale: { model: "~openai/gpt-luna-latest", temperature: 0.4, max_tokens: 800 },
+    relevanceJudge: { model: "~openai/gpt-luna-latest", temperature: 0 },
+    sourceOverview: { model: "~openai/gpt-luna-latest", temperature: 0.4, max_tokens: 1000 },
+    articleSelection: { model: "~openai/gpt-luna-latest", temperature: 0 },
     backgroundContext: {
-      model: "openai/gpt-4.1", temperature: 0, max_tokens: 600,
+      model: "~openai/gpt-luna-latest", temperature: 0, max_tokens: 600,
       response_format: { type: "json_object" },
     },
-    htmlFormatting: { model: "openai/gpt-4.1", temperature: 0.4 },
+    htmlFormatting: { model: "~openai/gpt-luna-latest", temperature: 0.4 },
   },
   // One independent article per entry, all using the same selected sources.
   // Omitted max_tokens preserves the provider's default output limit.
@@ -58,8 +58,7 @@ export interface ReportIndexEntry {
   day: string;
   headline: string;
   reports: Array<{
-    /** Absent on historical reports that predate the shared pipeline. */
-    writerId?: string;
+    writerId: string;
     model: string;
     file: string;
   }>;

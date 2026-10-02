@@ -31,11 +31,9 @@ function bullet(e: Enriched): string {
 }
 
 /* internal accumulator while folding */
-type WriterReport = DailyReport & { writer: WriterConfig; run_id: string };
-
 interface BuildCtx {
   bullets : string;        // for narrative prompt
-  report  : WriterReport;
+  report  : DailyReport;
 }
 
 function makeSeed(writer: WriterConfig, runId: string, items: Enriched[]): BuildCtx {
@@ -49,6 +47,7 @@ function makeSeed(writer: WriterConfig, runId: string, items: Enriched[]): Build
       pipeline_settings: structuredClone(stages),
       headline     : "Today in Tech & Research",
       narrative_html: "",
+      narrative_raw: "",
       items        : structuredClone(items),
     },
   };
@@ -127,7 +126,7 @@ export async function prepareSources(raw: NewsItem[]): Promise<Enriched[]> {
 }
 
 /* Each writer receives a fresh report object built from the same inputs. */
-export async function writeArticle(writer: WriterConfig, runId: string, items: Enriched[]): Promise<WriterReport> {
+export async function writeArticle(writer: WriterConfig, runId: string, items: Enriched[]): Promise<DailyReport> {
   const { id, name, ...settings } = writer;
   const reportArr = await Flow.from([makeSeed(writer, runId, items)])
       /* ---- stage-5: narrative (plain prose) -------------------- */

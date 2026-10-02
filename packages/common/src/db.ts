@@ -20,10 +20,10 @@ export interface DailyReport {
 
   narrative_html: string;     // the “lede” / hero – already marked-up
 
-  narrative_raw?: string;
-  writer?: WriterConfig; // absent on historical reports
-  run_id?: string;       // shared selection run, identical across its writers
-  pipeline_settings?: Record<PipelineRole, ModelSettings>;
+  narrative_raw: string;
+  writer: WriterConfig;
+  run_id: string;       // shared selection run, identical across its writers
+  pipeline_settings: Record<PipelineRole, ModelSettings>;
   items: Array<{
     item: NewsItem;
     why: string;
@@ -178,9 +178,9 @@ export class DB {
   }
 
   /* ---------- write typed report ----------------------------------- */
-  writeFinalReport(day: string, rep: DailyReport & { writer: WriterConfig; run_id: string }) {
-    // llm_id is the historical column name. Namespace writer IDs so two
-    // writers can use the same provider model without overwriting each other.
+  writeFinalReport(day: string, rep: DailyReport) {
+    // Namespace writer IDs so two writers can use the same provider model
+    // without overwriting each other.
     this.writeReport(day, `writer:${rep.writer.id}`, "final", rep, "v2.0");
   }
 

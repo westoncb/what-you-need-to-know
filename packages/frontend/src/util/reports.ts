@@ -63,9 +63,8 @@ export function normalizeReport(value: unknown, day: string): PublishedReport {
     headline: text(value.headline) || "Tech & Research",
     narrative_html: text(value.narrative_html),
     items: value.items.map((entry, index) => {
-      if (!isObject(entry)) throw new Error(`The report for ${day} has an invalid source item.`);
-      // Existing exports wrap the source under `item`; also accept flat reports.
-      const item = isObject(entry.item) ? entry.item : entry;
+      if (!isObject(entry) || !isObject(entry.item)) throw new Error(`The report for ${day} has an invalid source item.`);
+      const item = entry.item;
       return {
         id: text(item.id) || `source-${index}`,
         src: text(item.src),
@@ -93,7 +92,7 @@ export async function loadReportIndex(
     !Array.isArray(entry.reports) || entry.reports.some(report =>
       !isObject(report) || !text(report.model) || typeof report.file !== "string" ||
       !new RegExp(`^${entry.day}/[a-z0-9-]+\\.json$`).test(report.file) ||
-      (report.writerId !== undefined && (typeof report.writerId !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(report.writerId)))
+      (typeof report.writerId !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(report.writerId))
     )
   )) throw new Error("The report index has an invalid format.");
   return (index as ReportIndexEntry[]).sort((a, b) => b.day.localeCompare(a.day));
@@ -106,8 +105,7 @@ export async function loadWriterReport(
   signal?: AbortSignal,
   fetcher: typeof fetch = fetch,
 ): Promise<PublishedReport | null> {
-  const entry = day.reports.find(report => report.writerId === writer.id) ??
-    day.reports.find(report => !report.writerId && report.model === writer.model);
+  const entry = day.reports.find(report => report.writerId === writer.id);
   if (!entry) return null;
 
   const response = await fetcher(`${baseUrl}data/${entry.file}`, { signal, cache: "no-cache" });
@@ -115,7 +113,7 @@ export async function loadWriterReport(
   if (!response.ok) throw new Error(`Could not load ${writer.name}'s report (HTTP ${response.status}).`);
   const data: unknown = await response.json();
   if (!isObject(data) || data.model !== entry.model ||
-      (entry.writerId && (!isObject(data.writer) || data.writer.id !== entry.writerId))) {
+      (!isObject(data.writer) || data.writer.id !== entry.writerId)) {
     throw new Error("This report does not match its index entry.");
   }
   return normalizeReport(data, day.day);
