@@ -1,6 +1,7 @@
 // llm.ts --------------------------------------------------------------
 import fetch from "node-fetch";
 import dotenv from "dotenv";
+import type { ModelSettings } from "../models";
 dotenv.config();
 
 /* -------------------------------------------------------------------- */
@@ -15,12 +16,7 @@ export interface TransformOpts<
   Out = string,
   Src = unknown,
   Pay = Src            // “payload” after pre() transforms
-> {
-  /* Model selection & low-level knobs */
-  model: string;
-  temperature?: number;
-  max_tokens?: number;
-  response_format?: { type: "json_object" };
+> extends ModelSettings {
 
   /* Reliability */
   retries?: number;

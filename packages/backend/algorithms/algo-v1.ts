@@ -1,6 +1,7 @@
-import { DB, NewsItem, DailyReport }          from "@wyntn/common/src/db";
-import { Flow, setLogger }       from "@wyntn/common/src/t-flow/flow";
-import { startWsServer }         from "../ws-server";
+import { DB, type NewsItem, type DailyReport } from "@wyntn/common/src/db";
+import { Flow } from "@wyntn/common/src/t-flow/flow";
+import { randomUUID } from "node:crypto";
+import { modelConfig, type WriterConfig } from "@wyntn/common/src/models";
 import {WhyObj, Enriched, EnhancedItem,
   whyPrompt, judgePrompt, duelPrompt,
   makeNarrativePrompt, overviewPrompt,
@@ -9,13 +10,12 @@ import {WhyObj, Enriched, EnhancedItem,
 /* ------------------------------------------------------------------ */
 /* Config                                                             */
 /* ------------------------------------------------------------------ */
-const MODELS = ["openai/gpt-4.1"];//["anthropic/claude-3.7-sonnet"]
 const TOP_K         = 8;
 const DEFAULT_CONCURRENCY      = 8;
 const JUDGE_CONC    = 8;
 const DUEL_CONC     = 4;
 
-setLogger(startWsServer(4000), { snapshotMs: 500 });
+const { stages } = modelConfig;
 
 /* ------------------------------------------------------------------ */
 /* Utility                                                             */
@@ -31,43 +31,41 @@ function bullet(e: Enriched): string {
 }
 
 /* internal accumulator while folding */
+type WriterReport = DailyReport & { writer: WriterConfig; run_id: string };
+
 interface BuildCtx {
   bullets : string;        // for narrative prompt
-  report  : DailyReport;   // is gradually filled
+  report  : WriterReport;
 }
 
-function makeSeed(model: string): BuildCtx {
+function makeSeed(writer: WriterConfig, runId: string, items: Enriched[]): BuildCtx {
   return {
-    bullets : "",
+    bullets : items.map(item => bullet(item) + "\n\n").join(""),
     report  : {
       generated_at : new Date().toISOString(),
-      model,
+      model: writer.model,
+      writer: { ...writer },
+      run_id: runId,
+      pipeline_settings: structuredClone(stages),
       headline     : "Today in Tech & Research",
       narrative_html: "",
-      items        : [],
+      items        : structuredClone(items),
     },
   };
 }
 
 /* ------------------------------------------------------------------ */
-/* Main runner for one model                                           */
+/* Shared preparation: performed once for all writers                  */
 /* ------------------------------------------------------------------ */
-async function runForModel(model: string) {
-  const db  = new DB(); await db.open();
-  const day = todayPhoenix();
-  const raw = await db.getNews(day, 50); await db.close();
-  if (!raw.length) { console.log("No news for", day); return; }
-
-  const reportArr = await Flow
+export async function prepareSources(raw: NewsItem[]): Promise<Enriched[]> {
+  return Flow
     .from<NewsItem>(raw)
 
     /* 1a ─ rationale ------------------------------------------------- */
     .llmMap<WhyObj>(
       whyPrompt,
       {
-        model,
-        temperature:  0.4,
-        max_tokens: 800,
+        ...stages.readingRationale,
 
         /* merge raw string with the source item */
         post: (raw, item) => ({
@@ -82,8 +80,7 @@ async function runForModel(model: string) {
     .llmFilter(
       (o: WhyObj) => judgePrompt(o.why),
       {
-        model,
-        temperature: 0.0,
+        ...stages.relevanceJudge,
         post: raw => raw.trim() === "KEEP",
       },
       JUDGE_CONC,
@@ -93,9 +90,7 @@ async function runForModel(model: string) {
     .llmMap<EnhancedItem>(
       overviewPrompt,
       {
-        model,
-        temperature: 0.4,
-        max_tokens: 1000,
+        ...stages.sourceOverview,
         post: (raw, item) => ({
           ...item,
           overview: raw.trim(),
@@ -109,8 +104,7 @@ async function runForModel(model: string) {
       TOP_K,
       (a: EnhancedItem, b: EnhancedItem) => duelPrompt(a, b),
       {
-        model,
-        temperature: 0.0,
+        ...stages.articleSelection,
         post: (raw, pair) => raw.trim() === "A" ? pair.a : pair.b,
       },
       DUEL_CONC,
@@ -121,10 +115,7 @@ async function runForModel(model: string) {
     .llmMap<Enriched>(
       ctxPrompt,
       {
-        model,
-        temperature: 0,
-        max_tokens : 600,
-        response_format: { type: "json_object" },
+        ...stages.backgroundContext,
         post: (raw, src) => {
           const { context } = JSON.parse(raw) as { context: string };
           return { ...src, context };          // keep Enriched shape
@@ -132,22 +123,21 @@ async function runForModel(model: string) {
       },
     )
 
-    /* ---- fold: build bullets + items ------------------------- */
-    .fold<BuildCtx>(makeSeed(model), (ctx, item) => {
-      ctx.bullets += bullet(item) + "\n\n";     // narrative input
-      ctx.report.items.push(item);              // full Enriched incl. card_html
-      return ctx;
-    })
+    .run();
+}
 
+/* Each writer receives a fresh report object built from the same inputs. */
+export async function writeArticle(writer: WriterConfig, runId: string, items: Enriched[]): Promise<WriterReport> {
+  const { id, name, ...settings } = writer;
+  const reportArr = await Flow.from([makeSeed(writer, runId, items)])
       /* ---- stage-5: narrative (plain prose) -------------------- */
       .llmMap<BuildCtx>(
-        obj => makeNarrativePrompt(model)(obj.bullets),   // reuse your fn
+        obj => makeNarrativePrompt(writer.model)(obj.bullets),
         {
-          model,
-          temperature : 0.7,
+          ...settings,
           post : (raw, obj) => {
             obj.report.narrative_raw = raw.trim();
-            return obj;           // keep flowing same BuildCtx
+            return obj;
           },
         },
         1,
@@ -157,8 +147,7 @@ async function runForModel(model: string) {
       .llmMap<BuildCtx>(
         obj => markupPrompt(obj.report.narrative_raw, obj.report.items),
         {
-          model,
-          temperature : 0.4,
+          ...stages.htmlFormatting,
           post : (raw, obj) => {
             obj.report.narrative_html = raw.trim();
             return obj;
@@ -169,28 +158,41 @@ async function runForModel(model: string) {
 
       .run();
 
-  const report = reportArr[0].report;
-  console.log(`\n=== WYNTN OUTPUT for ${model} ===\n`);
-  console.log(report.narrative_html);
-
-  await db.open();
-  await db.writeFinalReport(day, model, report);   // new helper
-  await db.close();
-
-}
-
-
-/* ------------------------------------------------------------------ */
-/* Kick off once per model                                             */
-/* ------------------------------------------------------------------ */
-export async function run() {
-  for (const model of MODELS) {
-    try { await runForModel(model); }
-    catch (err) { console.error("Pipeline failed for", model, err); }
+  const report = reportArr[0]?.report;
+  if (!report?.narrative_raw?.trim() || !report.narrative_html?.trim()) {
+    throw new Error(`Article generation failed for ${writer.name}.`);
   }
+  return report;
 }
 
-/* If file executed directly ---------------------------------------- */
-if (import.meta.url === process.argv[1]) {
-  run().then(() => process.exit());
+export async function run() {
+  const db = new DB();
+  await db.open();
+  const day = todayPhoenix();
+  const raw = db.getNews(day, 50);
+  await db.close();
+  if (!raw.length) throw new Error(`No news for ${day}; run news:fetch first.`);
+
+  const items = await prepareSources(raw);
+  if (!items.length || items.some(item => !item?.item || typeof item.context !== "string")) {
+    throw new Error("Shared source preparation produced no usable selection.");
+  }
+  const runId = randomUUID();
+  const failed: string[] = [];
+  for (const writer of modelConfig.writers) {
+    try {
+      const report = await writeArticle(writer, runId, items);
+      await db.open();
+      try {
+        db.writeFinalReport(day, report);
+      } finally {
+        await db.close();
+      }
+      console.log(`Saved ${day} report by ${writer.name} (${writer.model}).`);
+    } catch (error) {
+      failed.push(writer.name);
+      console.error(`Article generation failed for ${writer.name}:`, error);
+    }
+  }
+  if (failed.length) throw new Error(`Failed writers: ${failed.join(", ")}`);
 }

@@ -1,10 +1,36 @@
 [
   {
     "day": "2025-05-23",
-    "headline": "Today in Tech & Research"
+    "headline": "Today in Tech & Research",
+    "reports": [
+      {
+        "model": "openai/gpt-4.1",
+        "file": "2025-05-23/legacy-c8893463e7ced420.json"
+      }
+    ]
+  },
+  {
+    "day": "2025-05-11",
+    "headline": "Today in Tech & Research",
+    "reports": [
+      {
+        "model": "openai/gpt-4.1",
+        "file": "2025-05-11/legacy-c8893463e7ced420.json"
+      },
+      {
+        "model": "anthropic/claude-3.7-sonnet",
+        "file": "2025-05-11/legacy-63359a9ba5555afd.json"
+      }
+    ]
   },
   {
     "day": "2025-05-10",
-    "headline": "Today in Tech & Research"
+    "headline": "Today in Tech & Research",
+    "reports": [
+      {
+        "model": "openai/gpt-4.1",
+        "file": "2025-05-10/legacy-c8893463e7ced420.json"
+      }
+    ]
   }
 ]

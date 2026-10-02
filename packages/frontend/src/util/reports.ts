@@ -1,4 +1,5 @@
 import DOMPurify from "dompurify";
+import type { ReportIndexEntry, WriterConfig } from "@wyntn/common/src/models";
 
 export function sanitizeReportHtml(html: string): string {
   return DOMPurify.sanitize(html, {
@@ -79,40 +80,43 @@ export function normalizeReport(value: unknown, day: string): PublishedReport {
   };
 }
 
-export async function loadLatestReport(
+export async function loadReportIndex(
   baseUrl: string,
   signal?: AbortSignal,
   fetcher: typeof fetch = fetch,
-): Promise<PublishedReport | null> {
-  const indexResponse = await fetcher(`${baseUrl}data/index.json`, { signal, cache: "no-cache" });
-  if (!indexResponse.ok) throw new Error(`Could not load the report index (HTTP ${indexResponse.status}).`);
-  let index: unknown;
-  try {
-    index = await indexResponse.json();
-  } catch {
-    throw new Error("The report index is not valid JSON.");
-  }
+): Promise<ReportIndexEntry[]> {
+  const response = await fetcher(`${baseUrl}data/index.json`, { signal, cache: "no-cache" });
+  if (!response.ok) throw new Error(`Could not load the report index (HTTP ${response.status}).`);
+  const index: unknown = await response.json();
   if (!Array.isArray(index) || index.some(entry =>
-    !isObject(entry) || typeof entry.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(entry.day)
-  )) {
-    throw new Error("The report index has an invalid format.");
-  }
+    !isObject(entry) || typeof entry.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(entry.day) ||
+    !Array.isArray(entry.reports) || entry.reports.some(report =>
+      !isObject(report) || !text(report.model) || typeof report.file !== "string" ||
+      !new RegExp(`^${entry.day}/[a-z0-9-]+\\.json$`).test(report.file) ||
+      (report.writerId !== undefined && (typeof report.writerId !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(report.writerId)))
+    )
+  )) throw new Error("The report index has an invalid format.");
+  return (index as ReportIndexEntry[]).sort((a, b) => b.day.localeCompare(a.day));
+}
 
-  const days = [...new Set(index.map(entry => entry.day as string))].sort().reverse();
-  if (!days.length) return null;
+export async function loadWriterReport(
+  baseUrl: string,
+  day: ReportIndexEntry,
+  writer: WriterConfig,
+  signal?: AbortSignal,
+  fetcher: typeof fetch = fetch,
+): Promise<PublishedReport | null> {
+  const entry = day.reports.find(report => report.writerId === writer.id) ??
+    day.reports.find(report => !report.writerId && report.model === writer.model);
+  if (!entry) return null;
 
-  for (const day of days) {
-    const response = await fetcher(`${baseUrl}data/${day}.json`, { signal, cache: "no-cache" });
-    // An older valid report is still useful if a newer export was removed.
-    if (response.status === 404) continue;
-    if (!response.ok) throw new Error(`Could not load the report for ${day} (HTTP ${response.status}).`);
-    let report: unknown;
-    try {
-      report = await response.json();
-    } catch {
-      throw new Error(`The report for ${day} is not valid JSON.`);
-    }
-    return normalizeReport(report, day);
+  const response = await fetcher(`${baseUrl}data/${entry.file}`, { signal, cache: "no-cache" });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Could not load ${writer.name}'s report (HTTP ${response.status}).`);
+  const data: unknown = await response.json();
+  if (!isObject(data) || data.model !== entry.model ||
+      (entry.writerId && (!isObject(data.writer) || data.writer.id !== entry.writerId))) {
+    throw new Error("This report does not match its index entry.");
   }
-  throw new Error("The report index lists reports that are no longer available.");
+  return normalizeReport(data, day.day);
 }

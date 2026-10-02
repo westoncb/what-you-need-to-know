@@ -82,6 +82,9 @@ importers:
 
   packages/frontend:
     dependencies:
+      '@wyntn/common':
+        specifier: workspace:*
+        version: link:../common
       dompurify:
         specifier: ^3.4.16
         version: 3.4.16

@@ -3,6 +3,7 @@ import fs from "fs";
 import { createRequire } from "module";
 import path from "path";
 import dotenv from "dotenv";
+import type { ModelSettings, PipelineRole, WriterConfig } from "./models";
 dotenv.config();
 
 /* ---------- Types ---------- */
@@ -19,15 +20,15 @@ export interface DailyReport {
 
   narrative_html: string;     // the “lede” / hero – already marked-up
 
-  /** Cards that appear below the narrative */
+  narrative_raw?: string;
+  writer?: WriterConfig; // absent on historical reports
+  run_id?: string;       // shared selection run, identical across its writers
+  pipeline_settings?: Record<PipelineRole, ModelSettings>;
   items: Array<{
-    id      : string;
-    src     : string;         // "hn", "arxiv", …
-    title   : string;
-    url     : string;
-    summary : string;         // raw or lightly cleaned
-    /** plain explanation paragraph(s) */
-    context : string;
+    item: NewsItem;
+    why: string;
+    overview: string;
+    context: string;
   }>;
 }
 
@@ -135,12 +136,12 @@ export class DB {
       ] as const;
     })();
 
-    const res = this.db.exec(sql, params);
+    const res = this.db.exec(sql, [...params]);
 
-    const rows =
-      res[0]?.values.map((v) =>
-        Object.fromEntries(res[0].columns.map((c, i) => [c, v[i]]))
-      ) as NewsItem[] ?? [];
+    const rows: NewsItem[] = res[0]?.values.map(([id, src, day, title, url, summary]) => ({
+      id: String(id), src: src as Source, day: String(day),
+      title: String(title ?? ""), url: String(url ?? ""), summary: String(summary ?? ""),
+    })) ?? [];
 
     if (!rows.length) return []; // early exit
 
@@ -177,13 +178,10 @@ export class DB {
   }
 
   /* ---------- write typed report ----------------------------------- */
-  writeFinalReport(
-    day   : string,
-    model : string,
-    rep   : DailyReport,
-    ver   = "v1.0",
-  ) {
-    this.writeReport(day, model, "final", rep, ver);
+  writeFinalReport(day: string, rep: DailyReport & { writer: WriterConfig; run_id: string }) {
+    // llm_id is the historical column name. Namespace writer IDs so two
+    // writers can use the same provider model without overwriting each other.
+    this.writeReport(day, `writer:${rep.writer.id}`, "final", rep, "v2.0");
   }
 
   /* -------------------------------------------------------------- */
@@ -216,25 +214,11 @@ export class DB {
       `SELECT * FROM mmge_reports WHERE day=?${stage ? " AND stage=?" : ""} ORDER BY llm_id`,
       stage ? [day, stage] : [day],
     );
-    return res[0]?.values.map((v) => Object.fromEntries(res[0].columns.map((c, i) => [c, v[i]]))) as MMGEReport[] ?? [];
+    return res[0]?.values.map(([day, llm_id, algo_version, stage, content]) => ({
+      day: String(day), llm_id: String(llm_id), algo_version: String(algo_version),
+      stage: stage as Stage, content: String(content),
+    })) ?? [];
   }
-
-  /* ---------- convenient day-level fetch --------------------------- */
-  /**
-   * Returns the stored DailyReport for a given day (and optional model).
-   * If no record is found, it returns null.
-   */
-   getFinalReport(day: string, model?: string): DailyReport | null {
-     const sql = `
-       SELECT content FROM mmge_reports
-       WHERE day = ? AND stage = 'final' ${model ? "AND llm_id = ?" : ""}
-       ORDER BY llm_id LIMIT 1
-     `;
-     const rows = this.db.exec(sql, model ? [day, model] : [day]);
-
-     if (!rows.length) return null;
-     return JSON.parse(rows[0].values[0][0] as string) as DailyReport;
-   }
 
    /* ---------- utility: recent days with a final report ------------- */
    getRecentFinalDays(limit = 30): string[] {

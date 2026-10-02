@@ -174,7 +174,7 @@ function llmMapStage<A, B, Pay = A>(
 /* ------------------------------------------------------------------ */
 function llmFilterStage<A, Pay = A>(
   judgePrompt: (p: Pay) => ChatMsg[],                 // still top-level
-  baseOpts:   TransformOpts<boolean, A, Pay> & { model: string },
+  baseOpts:   Omit<TransformOpts<boolean, A, Pay>, "prompt"> & { model: string },
   concurrency = 8,
 ): Stage<A, A> {
 
@@ -233,7 +233,7 @@ function llmFilterStage<A, Pay = A>(
 function llmSelectStage<A>(
   k: number,
   duelPrompt : (a: A, b: A) => ChatMsg[],
-  baseOpts   : TransformOpts<A, { a: A; b: A }> & { model: string },
+  baseOpts   : Omit<TransformOpts<A, { a: A; b: A }>, "prompt"> & { model: string },
   concurrency = 4,
 ): Stage<A, A> {
 
@@ -352,7 +352,7 @@ export class Flow<A> {
     /* ---------- 2. Filter: judge KEEP / SKIP ---------- */
     llmFilter(
       judgePrompt: (a: A) => ChatMsg[],
-      opts: Omit<TransformOpts<B, A>, "prompt"> & { model: string },
+      opts: Omit<TransformOpts<boolean, A>, "prompt"> & { model: string },
       c = 8,
     ): Flow<A> {
       return new Flow(
@@ -365,7 +365,7 @@ export class Flow<A> {
     llmSelect(
       k: number,
       duelPrompt: (a: A, b: A) => ChatMsg[],
-      opts: Omit<TransformOpts<B, A>, "prompt"> & { model: string },
+      opts: Omit<TransformOpts<A, { a: A; b: A }>, "prompt"> & { model: string },
       c = 4,
     ): Flow<A> {
       return new Flow(

@@ -140,7 +140,7 @@ export const makeNarrativePrompt = (model: string) => {
 }
 
 /* 5 — markup / tagging prompt */
-export function markupPrompt(prose: string, items: NewsItem[]): ChatMsg[] {
+export function markupPrompt(prose: string, items: Enriched[]): ChatMsg[] {
   return [
     {
       role: "system",

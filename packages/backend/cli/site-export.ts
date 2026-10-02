@@ -1,73 +1,92 @@
 #!/usr/bin/env tsx
-/**
- * Copies the latest DailyReport JSON files out of SQLite into
- * frontend/public/data/, writes an index.json for the frontend, and pushes to
- * the gh-pages branch.
- */
-import fs from "fs";
-import path from "path";
-import { execSync } from "node:child_process";
-import { DB, DailyReport } from "@wyntn/common/src/db";
+/** Export writer-specific reports and their availability index for the static site. */
+import fs from "node:fs";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { DB, type DailyReport } from "@wyntn/common/src/db";
+import { modelConfig, type ReportIndexEntry } from "@wyntn/common/src/models";
 
-/* ---------- config ---------- */
-const KEEP_DAYS      = 30;                   // how many days of JSON to ship
-// Updated to write directly to the frontend package's public directory
-const OUT_DIR        = path.resolve(".", "packages", "frontend", "public", "data");
-const GIT_AUTO_PUSH  = false;                // flip to false while testing
+const KEEP_DAYS = 30;
+const OUT_DIR = fileURLToPath(new URL("../../frontend/public/data/", import.meta.url));
 
-/* ---------- util ---------- */
-function todayISO() { return new Date().toISOString().slice(0, 10); }
+/** Preserve historical exports, including reports not present in the local DB. */
+export async function exportReports(outDir = OUT_DIR) {
+  const byDay = new Map<string, Map<string, DailyReport>>();
+  function remember(day: string, report: DailyReport) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !report.model || !report.narrative_html?.trim() || !Array.isArray(report.items)) {
+      throw new Error(`Invalid report for ${day}.`);
+    }
+    if (report.writer && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(report.writer.id)) {
+      throw new Error(`Invalid writer ID in report for ${day}.`);
+    }
+    const key = report.writer ? `writer:${report.writer.id}` : `legacy:${report.model}`;
+    const reports = byDay.get(day) ?? new Map<string, DailyReport>();
+    const previous = reports.get(key);
+    if (!previous || Date.parse(report.generated_at) >= Date.parse(previous.generated_at)) {
+      reports.set(key, report);
+    }
+    byDay.set(day, reports);
+  }
 
-/* ---------- main ---------- */
-async function main() {
   const db = new DB();
   await db.open();
-
-  /* pull most recent N distinct days that have a final report */
-  const days = db.getRecentFinalDays(KEEP_DAYS);
-
-  if (!days.length) {
-    console.log("No reports found; nothing to export.");
+  try {
+    for (const day of db.getRecentFinalDays(KEEP_DAYS)) {
+      for (const row of db.getReports(day, "final")) remember(day, JSON.parse(row.content));
+    }
+  } finally {
     await db.close();
-    return;
   }
 
-  // Create the output directory if it doesn't exist
-  fs.mkdirSync(OUT_DIR, { recursive: true });
-  console.log(`Creating reports in: ${OUT_DIR}`);
-
-  const index: { day:string; headline:string }[] = [];
-
-  for (const day of days) {
-    const rep = db.getFinalReport(day, "openai/gpt-4.1");
-    if (!rep) continue;                      // shouldn't happen
-
-    const file = path.join(OUT_DIR, `${day}.json`);
-    fs.writeFileSync(file, JSON.stringify(rep, null, 2), "utf8");
-    console.log("✅ wrote", file);
-
-    index.push({ day, headline: rep.headline });
-  }
-
-  /* write simple index the SPA can fetch once */
-  fs.writeFileSync(
-    path.join(OUT_DIR, "index.json"),
-    JSON.stringify(index, null, 2),
-    "utf8"
-  );
-
-  await db.close();
-
-  /* ---------- push to gh-pages (optional) ---------- */
-  if (GIT_AUTO_PUSH) {
-    try {
-      // Updated git add path to match the new output directory
-      execSync(`git add ${OUT_DIR} && git commit -m 'site export' && git push`, { stdio: "inherit" });
-      console.log("🚀 Pushed updated data to origin.");
-    } catch (err: any) {
-      console.error("git push failed:", err.message);
+  fs.mkdirSync(outDir, { recursive: true });
+  for (const entry of fs.readdirSync(outDir, { withFileTypes: true })) {
+    if (entry.isFile() && /^\d{4}-\d{2}-\d{2}\.json$/.test(entry.name)) {
+      remember(entry.name.slice(0, 10), JSON.parse(fs.readFileSync(path.join(outDir, entry.name), "utf8")));
+    } else if (entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name)) {
+      for (const file of fs.readdirSync(path.join(outDir, entry.name))) {
+        if (file.endsWith(".json")) {
+          remember(entry.name, JSON.parse(fs.readFileSync(path.join(outDir, entry.name, file), "utf8")));
+        }
+      }
     }
   }
+
+  const index: ReportIndexEntry[] = [];
+  for (const day of [...byDay.keys()].sort().reverse().slice(0, KEEP_DAYS)) {
+    let reports = [...byDay.get(day)!.values()].sort((a, b) => Date.parse(b.generated_at) - Date.parse(a.generated_at));
+    // A partly successful rerun must not mix writers from different selections.
+    const latestRun = reports.find(report => report.run_id)?.run_id;
+    if (latestRun) reports = reports.filter(report => report.run_id === latestRun);
+
+    const entry: ReportIndexEntry = { day, headline: reports[0].headline, reports: [] };
+    fs.mkdirSync(path.join(outDir, day), { recursive: true });
+    for (const report of reports) {
+      // Legacy reports have no writer identity. Keep their original model and
+      // let matching configured writers read them without inventing provenance.
+      const id = report.writer?.id ?? `legacy-${createHash("sha256").update(report.model).digest("hex").slice(0, 16)}`;
+      const file = `${day}/${id}.json`;
+      const target = path.join(outDir, file);
+      fs.writeFileSync(`${target}.tmp`, JSON.stringify(report, null, 2) + "\n");
+      fs.renameSync(`${target}.tmp`, target);
+      entry.reports.push({ writerId: report.writer?.id, model: report.model, file });
+    }
+    index.push(entry);
+  }
+
+  const indexFile = path.join(outDir, "index.json");
+  fs.writeFileSync(`${indexFile}.tmp`, JSON.stringify(index, null, 2) + "\n");
+  fs.renameSync(`${indexFile}.tmp`, indexFile);
+  console.log(`Exported ${index.length} report dates to ${outDir}.`);
+  for (const writer of modelConfig.writers) {
+    const count = index.filter(entry => entry.reports.some(report =>
+      report.writerId === writer.id || (!report.writerId && report.model === writer.model)
+    )).length;
+    console.log(`${writer.name}: reports available on ${count} dates.`);
+  }
+  return index;
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  exportReports().catch(error => { console.error(error); process.exitCode = 1; });
+}

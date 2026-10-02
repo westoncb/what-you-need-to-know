@@ -361,3 +361,11 @@ body {
 .article-frame:active::-webkit-scrollbar-thumb {
   background-color: rgba(174, 159, 135, 0.5);
 }
+
+.writer-report {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
