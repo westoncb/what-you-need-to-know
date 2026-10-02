@@ -2,7 +2,6 @@
 .item-list-container {
   margin: 1.5rem 0;
   margin-top: 0;
-  /* background-color: rgba(252, 251, 247, 0.7); /* Less transparent container */ */
   /* border: 1px solid rgba(0, 0, 0, 0.08); */
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
@@ -99,6 +98,8 @@
 }
 
 .item-action-button {
+  padding: 0;
+  border: 0;
   position: relative;
   display: flex;
   align-items: center;

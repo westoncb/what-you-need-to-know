@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import LightweightModal from "./LightWeightModal";
 import "./ItemList.css";
+import { sourceUrl as safeSourceUrl } from "../util/reports";
 
 const ItemList = ({ items = [] }) => {
   if (!Array.isArray(items) || items.length === 0) {
@@ -87,28 +88,32 @@ const Item = ({ item }) => {
         </div>
 
         <div className="item-title" title={item.title}>
-          <a href={item.url} target="_blank" rel="noopener noreferrer">
+          <a href={safeSourceUrl(item.url)} target="_blank" rel="noopener noreferrer">
             {item.title}
           </a>
         </div>
 
         <div className="item-actions">
           {item.context && (
-            <div
+            <button
+              type="button"
+              aria-label={`Read context for ${item.title}`}
               className="item-action-button ctx-button"
               onClick={() => openModal('context')}
             >
               <span className="action-label">ctx</span>
-            </div>
+            </button>
           )}
 
           {item.why && (
-            <div
+            <button
+              type="button"
+              aria-label={`Read why ${item.title} matters`}
               className="item-action-button why-button"
               onClick={() => openModal('why')}
             >
               <span className="action-label">why</span>
-            </div>
+            </button>
           )}
         </div>
       </div>

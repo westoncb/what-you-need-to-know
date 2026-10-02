@@ -1,125 +1,79 @@
-import React, { useState, useEffect } from "react";
-import parse, { domToReact } from "html-react-parser";
+import React, { useMemo } from "react";
+import parse, { attributesToProps, domToReact } from "html-react-parser";
+import type { DOMNode, HTMLReactParserOptions } from "html-react-parser";
+import { sanitizeReportHtml, sourceUrl, type PublishedReport, type ReportItem } from "../util/reports";
 import "./Article.css";
-import ItemList from './ItemList';
+import ItemList from "./ItemList";
 
-// Placeholder for the source attribution component
-const SourceAttribution = ({ item }) => {
-  const [showContext, setShowContext] = useState(false);
-  return (
-    <div className="source-attribution">
-      <a href={item?.url || "#"} target="_blank" rel="noopener noreferrer">
-        <div className="source-info">
-          <span className="source-title">{item?.title || "Unknown Source"}</span>
-        </div>
-      </a>
-    </div>
-  );
-};
+const SourceAttribution = ({ item }: { item: ReportItem }) => (
+  <div className="source-attribution">
+    <a href={sourceUrl(item.url)} target="_blank" rel="noopener noreferrer">
+      <div className="source-info">
+        <span className="source-title">{item.title}</span>
+      </div>
+    </a>
+  </div>
+);
 
-const Article = ({ report }) => {
-  const [parsedContent, setParsedContent] = useState(null);
+export default function Article({ report }: { report: PublishedReport }) {
+  const parsed = useMemo(() => {
+    try {
+      const itemsById = new Map(report.items.map(item => [item.id, item]));
+      let introFound = false;
+      const options: HTMLReactParserOptions = {
+        replace: domNode => {
+          if (!("attribs" in domNode)) return;
 
-  useEffect(() => {
-    if (report && report.narrative_html) {
-      try {
-        console.log("Report items:", report.items);
+          if (!introFound && domNode.name === "p" &&
+              domNode.attribs.class?.split(/\s+/).includes("intro")) {
+            introFound = true;
+            return (
+              <>
+                <p {...attributesToProps(domNode.attribs)}>
+                  {domToReact(domNode.children as DOMNode[], options)}
+                </p>
+                <ItemList items={report.items} />
+              </>
+            );
+          }
 
-        // Create a map of items by ID for easy lookup
-        const itemsById = {};
-        if (report.items) {
-          report.items.forEach(item => {
-            itemsById[item.id] = item;
-          });
-
-          console.log("Items by ID:", itemsById);
-        }
-
-        let introFound = false;
-
-        // Parse the HTML content
-        const options = {
-          replace: (domNode) => {
-            if (!domNode.attribs) return undefined;
-
-            // Insert ItemList after the intro paragraph if present
-            if (
-              !introFound &&
-              domNode.type === 'tag' &&
-              domNode.name === 'p' &&
-              domNode.attribs.class === 'intro'
-            ) {
-              introFound = true;
-              return (
-                <>
-                  <p className="intro">{domToReact(domNode.children, options)}</p>
-                  <ItemList items={report.items} />
-                </>
+          if (domNode.name === "section" && domNode.attribs["data-source-id"]) {
+            const sourceItem = itemsById.get(domNode.attribs["data-source-id"]);
+            let headingProcessed = false;
+            const children: React.ReactNode[] = [];
+            domNode.children.forEach((child, index) => {
+              children.push(
+                <React.Fragment key={index}>
+                  {domToReact([child] as DOMNode[], options)}
+                </React.Fragment>,
               );
-            }
-
-            // Handle content sections with source IDs
-            if (
-              domNode.type === 'tag' &&
-              domNode.name === 'section' &&
-              domNode.attribs['data-source-id']
-            ) {
-              const sourceId = domNode.attribs['data-source-id'];
-              const sourceItem = itemsById[sourceId];
-
-              // Find the section heading to attach the source attribution after it
-              const children = [];
-              let headingProcessed = false;
-
-              for (let i = 0; i < domNode.children.length; i++) {
-                const child = domNode.children[i];
-                children.push(domToReact([child], options));
-
-                // After the section heading, add the source attribution
-                if (
-                  !headingProcessed &&
-                  child.type === 'tag' &&
-                  child.name === 'h2' &&
-                  child.attribs &&
-                  child.attribs.class === 'section-heading'
-                ) {
-                  headingProcessed = true;
-                  if (sourceItem) {
-                    children.push(<SourceAttribution key={`source-${sourceId}`} item={sourceItem} />);
-                  }
+              if (!headingProcessed && "name" in child && child.name === "h2") {
+                headingProcessed = true;
+                if (sourceItem) {
+                  children.push(<SourceAttribution key="source" item={sourceItem} />);
                 }
               }
-
-              return <section {...domNode.attribs}>{children}</section>;
-            }
-
-            return undefined;
+            });
+            return <section {...attributesToProps(domNode.attribs)}>{children}</section>;
           }
-        };
+        },
+      };
 
-        const content = parse(report.narrative_html, options);
-        setParsedContent(content);
-      } catch (error) {
-        console.error("Error parsing HTML:", error);
-        setParsedContent(<div className="error">Error parsing report content</div>);
-      }
+      const cleanHtml = sanitizeReportHtml(report.narrative_html);
+      if (!cleanHtml.trim()) throw new Error("Report has no readable content.");
+      const content = parse(cleanHtml, options);
+      return { content, introFound };
+    } catch {
+      return { error: "This report could not be displayed. Please try another time." };
     }
   }, [report]);
 
-  if (!report) {
-    return (
-      <div className="loading-container">
-        <div className="loading-spinner"></div>
-        <p>Preparing today's curated report...</p>
-      </div>
-    );
-  }
+  if ("error" in parsed) return <div className="error-message" role="alert">{parsed.error}</div>;
 
-  if (parsedContent) {
-    return <div className="report-container">{parsedContent}</div>;
-  }
-
-  return <div>No report content available.</div>;
-};
-
-export default Article;
+  return (
+    <div className="report-container">
+      {!parsed.introFound && <ItemList items={report.items} />}
+      {parsed.content}
+    </div>
+  );
+}

@@ -258,7 +258,7 @@
 /* Decorative quote marks */
 .key-quote::before,
 .key-quote::after {
-  content: """;
+  content: '"';
   font-family: 'Playfair Display', serif;
   font-size: 4rem;
   position: absolute;
@@ -272,7 +272,7 @@
 }
 
 .key-quote::after {
-  content: """;
+  content: '"';
   bottom: -2rem;
   right: 0.5rem;
 }

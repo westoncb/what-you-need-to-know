@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useId } from "react";
 import "./LightWeightModal.css";
 
 const LightweightModal = ({ isOpen, onClose, title, content }) => {
   const modalRef = useRef(null);
+  const titleId = useId();
 
   // Close when clicking outside the modal
   useEffect(() => {
@@ -45,8 +46,8 @@ const LightweightModal = ({ isOpen, onClose, title, content }) => {
     <div className="modal-overlay">
       <div className="modal-container" ref={modalRef}>
         <div className="modal-header">
-          <h3>{title}</h3>
-          <button className="modal-close" onClick={onClose}>×</button>
+          <h3 id={titleId}>{title}</h3>
+          <button className="modal-close" aria-label="Close dialog" onClick={onClose}>×</button>
         </div>
         <div className="modal-content">
           {content}

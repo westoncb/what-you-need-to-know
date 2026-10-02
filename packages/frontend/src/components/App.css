@@ -80,16 +80,25 @@ body {
   letter-spacing: 0.5px;
 }
 
-.about-link {
-  font-family: var(--monospace-font);
-  font-size: 13px;
+.report-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  padding: 0.5rem 1rem;
   color: var(--text-secondary);
-  text-decoration: none;
-  transition: color 0.2s ease;
+  font-size: 12px;
+  border-bottom: 1px solid var(--panel-border);
 }
 
-.about-link:hover {
+.retry-button {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  background: var(--tab-inactive);
   color: var(--text-primary);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 /* Tabs Container */

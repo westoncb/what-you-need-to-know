@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Article from "./Article";
+import { loadLatestReport, type PublishedReport } from "../util/reports";
 import "./App.css";
 
 const AI_MODELS = [
@@ -25,64 +26,32 @@ const AI_MODELS = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState(AI_MODELS[0].id);
-  const [reports, setReports] = useState({});
+  const [report, setReport] = useState<PublishedReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // Helper function to get local date in YYYY-MM-DD format
-  const getLocalDateString = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    const fetchReports = async () => {
-      try {
-        setLoading(true);
-        const dateString = getLocalDateString();
-        console.log(`Fetching reports for local date: ${dateString}`);
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    setReport(null);
 
-        // Fetch reports for all models
-        const reportData = {};
-
-        // For demonstration, we're just loading one report and duplicating it
-        // In production, you'd fetch different reports for different models
-        const response = await fetch(`${import.meta.env.BASE_URL}data/${dateString}.json`);
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch report: ${response.status}`);
+    loadLatestReport(import.meta.env.BASE_URL, controller.signal)
+      .then(report => {
+        if (!controller.signal.aborted) setReport(report);
+      })
+      .catch(error => {
+        if (!controller.signal.aborted) {
+          setError(error instanceof Error ? error.message : "Could not load the latest report.");
         }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
 
-        const data = await response.json();
-
-        // Duplicate the same report for all models (for demonstration)
-        AI_MODELS.forEach(model => {
-          const fixedItems = []
-          console.log("DATA", data)
-          data.items.forEach(item => {
-            const subItem = item.item;
-            console.log("sub:",subItem)
-            fixedItems.push({ context: item.context, overview: item.overview, why: item.why, ...subItem});
-          });
-          reportData[model.id] = {...data, items: [...fixedItems]};
-        });
-
-        setReports(reportData);
-        setLoading(false);
-      } catch (err) {
-        console.error("Error loading reports:", err);
-        setError(err.message);
-        setLoading(false);
-      }
-    };
-
-    fetchReports();
-  }, []);
-
-  // In App.jsx, update the return statement to:
+    return () => controller.abort();
+  }, [attempt]);
 
   return (
     <div className="app-container">
@@ -90,7 +59,6 @@ export default function App() {
         <div className="title-bar">
           <div className="title-bar-content">
             <div className="app-title">ai-hourly-news</div>
-            <a href={`${import.meta.env.BASE_URL}about`} className="about-link">about</a>
           </div>
         </div>
 
@@ -112,20 +80,37 @@ export default function App() {
             ))}
           </div>
 
+          {report && (
+            <div className="report-metadata">
+              <span>{report.generated_at
+                ? `Generated ${new Intl.DateTimeFormat("en-US", {
+                    dateStyle: "medium", timeZone: "America/Phoenix",
+                  }).format(new Date(report.generated_at))}`
+                : `Report for ${report.day}`}</span>
+              <span>{report.model}</span>
+            </div>
+          )}
+
           <div className="tab-content">
             {loading ? (
-              <div className="loading-container">
+              <div className="loading-container" role="status">
                 <div className="loading-spinner"></div>
                 <p>Loading reports...</p>
               </div>
             ) : error ? (
-              <div className="error-message">
+              <div className="error-message" role="alert">
                 <h3>Error loading reports</h3>
                 <p>{error}</p>
+                <button className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button>
+              </div>
+            ) : !report ? (
+              <div className="loading-container" role="status">
+                <h3>No reports yet</h3>
+                <p>Check back after the first report is published.</p>
               </div>
             ) : (
               <div className="article-frame">
-                <Article report={reports[activeTab]} />
+                <Article report={report} />
               </div>
             )}
           </div>
