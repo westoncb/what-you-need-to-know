@@ -15,17 +15,17 @@ export const whyPrompt = (item: NewsItem): ChatMsg[] => [
     content:
     `so i'm trying to decide whether to spend more time reading this or not, but i'd like your opinion on whether it'll be worthwhile for me or not. ${profile}
 
-        if it's something at all in this realm or just a "big deal," like people will be talking about it, then i'm probably interested. or even better: if it's something that *should* be a big deal but people are likely to miss!
+    it doesn't have to be specifically related to anything i've told you about myself; you've gotta infer the details of who i am in total for yourself. that's just an arbitrary snapshot i wrote up real quick.
 
-        currently i'm considering this ${item.src === 'hn' ? 'hn story' : 'arxiv paper'} titled "${item.title}"
+    currently i'm considering this ${item.src === 'hn' ? 'hn story' : 'arxiv paper'} titled "${item.title}"
 
-        and i can share the ${item.src === 'hn' ? 'first part of it' : 'abstract'}:
+    and i can share the ${item.src === 'hn' ? 'first part of it' : 'abstract'}:
 
-        ##########################
-        ${item.summary}
-        ##########################
+    ##########################
+    ${item.summary}
+    ##########################
 
-        curious to hear your opinion on this one. please keep it somewhat short, like 3 paragraphs max.`,
+    curious to hear your opinion on this one. please stay under ~3 paragraphs.`,
   },
 ];
 
@@ -42,7 +42,7 @@ export const judgePrompt = (rationale: string): ChatMsg[] => [
 
     And here is some info on my background: ${profile}
 
-    If you think the argument is *at all* in favor of me reading it, respond exactly KEEP.  Otherwise respond exactly SKIP
+    If you think there's *any* chance it could be valuable for me to read it, respond exactly KEEP.  Otherwise respond exactly SKIP
     `,
   },
 ];
@@ -126,14 +126,14 @@ export const makeNarrativePrompt = (model: string) => {
     {
       role: "user",
       content:
-      `i've got this news/research paper filtering pipeline going and it's produced this set of items for me to learn about today (note: there may be errors or partial data since this comes from an automated system)
+      `hey ${model}, can you explain what's goin on in each of these to me in full technical detail? chances are i may not reading any of these in full myself so it's important that you go into detail; definitely looking more for "teach me the literal content" over "summary". i also want your raw, realistic take on practical real world impact. i don't care what an abstract or article claims, i mean from your experience seeing how these things goes and the practical realities around it and so on: i want to know if something strikes you as genuinely deep and important or incremental or anywhere between. take them as they are—i realize they may be incomplete so you've got to work with what you've got.
 
-              —and here's the list:
-              <list>
-              ${bulletList}
-              </list>
+                  <article_info>
+                  ${bulletList}
+                  </article_info>
 
-            please give me your take on the items. you're free to be opinionated in your presentation. this is for a highly technical audience likely to jump in and read the papers or other articles themselves but your reads on each will help to guide their attention.` ,
+      please please please don't use bullets or lists or tables or anything! i want to hear your beautiful sentences! a final note: i say "technical," but not everythign that comes through will necessarily be technical: i just mean the real *meat* of what's being talked about.
+                  ` ,
     },
   ];
 }
@@ -143,42 +143,45 @@ export function markupPrompt(prose: string, items: NewsItem[]): ChatMsg[] {
   return [
     {
       role: "system",
-      content: `You are a document markup specialist. Convert the input text into structured HTML using the following document primitives:
+      content: `You are a document markup specialist. Convert the input text into structured HTML that enhances readability and visual hierarchy while preserving the original content and meaning. Use these flexible document primitives:
 
-DOCUMENT STRUCTURE:
-- <article class="article"> - Wrap the entire document
-  - <h1 class="article-title"> - Main article title
-  - <p class="lede"> - Opening summary paragraph
-  - <section class="section" data-source-id="[item-id]"> - Individual content sections with source ID attribute
-    - <h2 class="section-title"> - Section title/heading
-    - <p> - Regular paragraphs
-    - <p class="dropcap"> - First paragraph of each section (will get a drop cap)
-    - <blockquote class="pullquote"> - Important quotes pulled out for emphasis
-    - <ul class="article-list"> - Unordered lists
-      - <li> - List items
-    - <span class="highlight"> - Inline text to emphasize
+CORE PRIMITIVES:
+- <article class="content-piece"> - Wrap the entire document
+- <h1 class="main-title"> - Main document title (if present)
+- <p class="intro"> - Any introductory/overview text
+- <section class="content-section" data-source-id="[item-id]"> - Distinct content sections
+  - <h2 class="section-heading"> - Section headings or titles
+  - <h3 class="subsection-heading"> - Sub-section headings
+  - <p> - Regular paragraphs
+  - <p class="emphasis"> - Key paragraphs deserving extra attention
+  - <blockquote class="key-quote"> - Important statements or quotes to highlight
+  - <ul class="point-list"> / <ol class="numbered-list"> - Lists of items
+    - <li> - List items
+  - <span class="highlight"> - Important inline phrases
+  - <div class="assessment-block"> - Evaluative or assessment sections
+  - <hr class="section-divider"> - Visual separation between major sections
 
 GUIDELINES:
-1. Always wrap the entire document in <article class="article">
-2. Use <h1 class="article-title"> only once for the main title
-3. Each main section should be wrapped in <section class="section">
-4. Add a data-source-id attribute to each section, using the ID from the corresponding source item
-5. Mark the first paragraph of each section with class="dropcap"
-6. Use <span class="highlight"> for key phrases to emphasize inline
-7. Use semantic HTML tags appropriately (p, blockquote, ul, li)
-8. Do not use the dropcap class on list items or blockquotes
+1. Adapt to the document's natural structure - don't force a specific format
+2. Identify the logical sections of the document and assign appropriate data-source-id attributes
+3. Use <span class="highlight"> sparingly for truly important phrases
+4. Preserve all original content and language
+5. If a section clearly relates to a source item, add the corresponding data-source-id attribute
+6. Add class="emphasis" to paragraphs that contain key insights or conclusions
+7. Use <div class="assessment-block"> for evaluative content like "Practical impact assessment"
+8. When lists appear in the original text, use appropriate <ul> or <ol> tags
 
 SOURCE ITEM LINKING:
-1. For each section, determine which source item it best corresponds to
+1. For each major section, determine which source item it best corresponds to
 2. Add that source item's ID as a data-source-id attribute on the section tag
-3. Do not wrap section titles in anchor tags - we'll handle linking separately
+3. If a section discusses multiple sources or no clear source, omit the data-source-id attribute
 
-Return valid HTML without <html>, <head>, or <body> tags. Only include the structured content—and please do not alter any of the original language, just mark-up.`,
+Return valid HTML that enhances readability and visual hierarchy while preserving the complete original content. Avoid adding <html>, <head>, or <body> tags.`,
     },
     { role: "user", content: `
-Here is the article: ${prose}
+Here is the document to markup: <document>${prose}</document>
 
-And here is meta data for each of the source items which were used to write the article:
+And here is meta data for each of the source items which were used to write this document:
 
 ${JSON.stringify(items.map(i => ({id: i.item.id, title: i.item.title, url: i.item.url})))}
       `.trim() },

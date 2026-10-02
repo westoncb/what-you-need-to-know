@@ -9,10 +9,10 @@ import {WhyObj, Enriched, EnhancedItem,
 /* ------------------------------------------------------------------ */
 /* Config                                                             */
 /* ------------------------------------------------------------------ */
-const MODELS = ["openai/gpt-4.1"];
-const TOP_K         = 4;
+const MODELS = ["openai/gpt-4.1"];//["anthropic/claude-3.7-sonnet"]
+const TOP_K         = 8;
 const DEFAULT_CONCURRENCY      = 8;
-const JUDGE_CONC    = 4;
+const JUDGE_CONC    = 8;
 const DUEL_CONC     = 4;
 
 setLogger(startWsServer(4000), { snapshotMs: 500 });
@@ -27,7 +27,7 @@ function todayPhoenix(): string {
 
 /* bullet-list formatter used by fold() */
 function bullet(e: Enriched): string {
-  return `• **Title: ${e.item.title}**\n<extract>${e.item.summary}</extract>\n\n — <reason>${e.why}</reason>\n`;
+  return `• **Title: ${e.item.title}**\n<extract>${e.item.summary}</extract>\n\n`;
 }
 
 /* internal accumulator while folding */
@@ -55,7 +55,7 @@ function makeSeed(model: string): BuildCtx {
 async function runForModel(model: string) {
   const db  = new DB(); await db.open();
   const day = todayPhoenix();
-  const raw = await db.getNews(day, 40); await db.close();
+  const raw = await db.getNews(day, 50); await db.close();
   if (!raw.length) { console.log("No news for", day); return; }
 
   const reportArr = await Flow
@@ -143,7 +143,7 @@ async function runForModel(model: string) {
       .llmMap<BuildCtx>(
         obj => makeNarrativePrompt(model)(obj.bullets),   // reuse your fn
         {
-          model : "anthropic/claude-3.7-sonnet",
+          model,
           temperature : 0.7,
           post : (raw, obj) => {
             obj.report.narrative_raw = raw.trim();
@@ -159,7 +159,6 @@ async function runForModel(model: string) {
         {
           model,
           temperature : 0.4,
-          max_tokens  : 3000,
           post : (raw, obj) => {
             obj.report.narrative_html = raw.trim();
             return obj;

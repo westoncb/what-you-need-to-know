@@ -39,7 +39,7 @@ async function main() {
   const index: { day:string; headline:string }[] = [];
 
   for (const day of days) {
-    const rep = db.getFinalReport(day);
+    const rep = db.getFinalReport(day, "openai/gpt-4.1");
     if (!rep) continue;                      // shouldn't happen
 
     const file = path.join(OUT_DIR, `${day}.json`);

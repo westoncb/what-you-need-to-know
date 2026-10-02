@@ -1,6 +1,10 @@
 /* Import appropriate fonts */
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Source+Serif+Pro:wght@400;600&display=swap');
 
+/* =================================== */
+/* APPLICATION LEVEL STYLING - PRESERVED */
+/* =================================== */
+
 /* Report container styling */
 .report-container {
   max-width: 800px;
@@ -37,8 +41,36 @@
   background-color: #ffebee;
 }
 
-/* Base typography and layout */
-.article {
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .content-piece {
+    padding: 1rem;
+  }
+
+  .main-title {
+    font-size: 1.8rem;
+  }
+
+  .intro {
+    font-size: 1.2rem;
+  }
+
+  .section-heading {
+    font-size: 1.4rem;
+  }
+
+  .key-quote {
+    font-size: 1.1rem;
+    margin: 1.5rem 0;
+  }
+}
+
+/* =================================== */
+/* NEW CONTENT MARKUP STYLING */
+/* =================================== */
+
+/* Base document container */
+.content-piece {
   font-family: 'Source Serif Pro', Georgia, serif;
   max-width: 100%;
   overflow-x: hidden;
@@ -55,7 +87,7 @@
 }
 
 /* Paper texture enhancement */
-.article::before {
+.content-piece::before {
   content: "";
   position: absolute;
   top: 0;
@@ -66,8 +98,8 @@
   pointer-events: none;
 }
 
-/* Article title with magazine-style decorative elements */
-.article-title {
+/* Main document title */
+.main-title {
   font-family: 'Playfair Display', serif;
   font-weight: 700;
   font-size: 2.4rem;
@@ -80,8 +112,8 @@
   padding-bottom: 1rem;
 }
 
-.article-title::before,
-.article-title::after {
+.main-title::before,
+.main-title::after {
   content: "";
   position: absolute;
   bottom: 0;
@@ -90,16 +122,16 @@
   background: rgba(0,0,0,0.25);
 }
 
-.article-title::before {
+.main-title::before {
   left: 30%;
 }
 
-.article-title::after {
+.main-title::after {
   right: 30%;
 }
 
-/* Lede - opening paragraph */
-.lede {
+/* Introductory paragraph */
+.intro {
   font-family: 'Playfair Display', serif;
   font-size: 1.4rem;
   line-height: 1.4;
@@ -109,8 +141,8 @@
   color: #222;
 }
 
-/* Section styling with tactile paper-like design */
-.section {
+/* Content section styling */
+.content-section {
   margin-bottom: 3rem;
   padding-bottom: 2.5rem;
   border-bottom: 1px solid rgba(0,0,0,0.07);
@@ -118,7 +150,7 @@
 }
 
 /* Decorative section divider */
-.section:not(:last-child)::after {
+.content-section:not(:last-child)::after {
   content: "✦";
   position: absolute;
   bottom: -0.5rem;
@@ -130,12 +162,12 @@
   padding: 0 0.8rem;
 }
 
-.section:last-child {
+.content-section:last-child {
   border-bottom: none;
 }
 
-/* Section headers with decorative elements */
-.section-title {
+/* Section & subsection headings */
+.section-heading {
   font-family: 'Playfair Display', serif;
   font-weight: 700;
   font-size: 1.6rem;
@@ -144,50 +176,62 @@
   color: #111;
   position: relative;
   padding-bottom: 0.5rem;
-  text-align: center;
 }
 
-/* Decorative underline for section titles */
-.section-title::after {
+/* Decorative underline for section headings */
+.section-heading::after {
   content: "";
   position: absolute;
   bottom: 0;
-  left: 35%;
-  right: 35%;
+  left: 0;
+  width: 60px;
   height: 1px;
   background: rgba(0,0,0,0.15);
 }
 
+/* Subsection heading styling */
+.subsection-heading {
+  font-family: 'Playfair Display', serif;
+  font-weight: 600;
+  font-size: 1.3rem;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  color: #222;
+}
+
 /* Normal paragraphs */
-.section p {
+.content-section p {
   margin-bottom: 1.2rem;
 }
 
-/* Drop caps for section first paragraphs - fixed positioning */
-.dropcap::first-letter {
-  float: left;
-  font-family: 'Playfair Display', serif;
-  font-size: 4.2rem;
-  line-height: 0.7;
-  padding-right: 0.6rem;
-  padding-bottom: 0.2rem;
-  margin-top: -0.2rem; /* Negative margin to pull it up in line with text */
+/* Emphasized paragraphs */
+.emphasis {
+  font-size: 1.05rem;
   color: #000;
-  font-weight: 700;
+  border-left: 3px solid rgba(0, 0, 0, 0.1);
+  padding-left: 0.8rem;
+  background-color: rgba(255, 255, 255, 0.3);
+  padding: 0.5rem 0.8rem;
+  border-radius: 2px;
 }
 
-/* Make sure drop cap containers behave */
-.dropcap {
-  overflow: hidden; /* Ensures content wraps properly around the drop cap */
-  clear: both; /* Prevents adjacent elements from wrapping around */
-  margin-bottom: 1.5rem;
-  position: relative; /* For positioning context */
+/* Assessment blocks for evaluative content */
+.assessment-block {
+  background-color: rgba(245, 245, 248, 0.6);
+  border-left: 3px solid rgba(70, 130, 180, 0.4);
+  padding: 1rem;
+  margin: 1.5rem 0;
+  border-radius: 3px;
 }
 
-/* Inline highlighted text - more tactile/magazine feel */
+.assessment-block p:last-child {
+  margin-bottom: 0;
+}
+
+/* Inline highlighted text */
 .highlight {
   font-weight: inherit;
-  font-style: italic;
+  font-style: normal;
   color: #000;
   background: linear-gradient(120deg, rgba(255,214,102,0.2) 0%, rgba(255,198,41,0.3) 100%);
   padding: 0 4px;
@@ -197,24 +241,23 @@
   text-shadow: 0 0 1px rgba(255,255,255,0.7);
 }
 
-/* Pull quotes - enhanced with magazine styling */
-.pullquote {
+/* Key quotes */
+.key-quote {
   font-family: 'Playfair Display', serif;
   font-style: italic;
   font-size: 1.3rem;
   line-height: 1.6;
   padding: 1.5rem 2rem;
-  margin: 2rem -1rem;
+  margin: 2rem 0;
   position: relative;
   color: #222;
-  text-align: center;
   background-color: rgba(252, 251, 247, 0.8);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 /* Decorative quote marks */
-.pullquote::before,
-.pullquote::after {
+.key-quote::before,
+.key-quote::after {
   content: """;
   font-family: 'Playfair Display', serif;
   font-size: 4rem;
@@ -223,60 +266,52 @@
   color: #000;
 }
 
-.pullquote::before {
+.key-quote::before {
   top: -0.5rem;
   left: 0.5rem;
 }
 
-.pullquote::after {
+.key-quote::after {
   content: """;
   bottom: -2rem;
   right: 0.5rem;
 }
 
-/* List styling with tactile print aesthetics */
-.article-list {
+/* List styling */
+.point-list,
+.numbered-list {
   padding-left: 1.5rem;
   margin: 1.2rem 0;
-  list-style-type: none; /* Remove default bullets */
-}
-
-.article-list li {
-  margin-bottom: 0.8rem;
-  position: relative;
-  padding-left: 0.5rem;
-}
-
-.article-list li::before {
-  content: "•";
-  position: absolute;
-  left: -1.2rem;
-  color: #555;
-  font-size: 0.85rem;
-  top: 0.3rem;
-  height: 3px;
-  width: 3px;
-  border-radius: 50%;
-}
-
-/* Add subtle print-like shading to lists */
-.article-list {
   background-color: rgba(250, 248, 245, 0.5);
-  padding-top: 0.7rem;
-  padding-bottom: 0.7rem;
+  padding: 0.7rem 0.7rem 0.7rem 2rem;
   border-radius: 2px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.02) inset;
 }
 
-/* Nested lists */
-.article-list .article-list {
-  margin: 0.8rem 0 0.8rem 1rem;
+.point-list li,
+.numbered-list li {
+  margin-bottom: 0.8rem;
+  position: relative;
 }
 
-.article img,
-.article pre,
-.article code,
-.article table {
+.point-list li:last-child,
+.numbered-list li:last-child {
+  margin-bottom: 0;
+}
+
+/* Section divider styling */
+.section-divider {
+  margin: 2rem 0;
+  border: 0;
+  height: 1px;
+  background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0));
+}
+
+/* Make sure embedded elements don't overflow */
+.content-piece img,
+.content-piece pre,
+.content-piece code,
+.content-piece table {
   max-width: 100%;
   overflow-x: auto;
 }
@@ -287,213 +322,9 @@ b, strong {
   color: #222;
 }
 
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .article {
-    padding: 1rem;
-  }
-
-  .article-title {
-    font-size: 1.8rem;
-  }
-
-  .lede {
-    font-size: 1.2rem;
-  }
-
-  .section-title {
-    font-size: 1.4rem;
-  }
-
-  .pullquote {
-    font-size: 1.1rem;
-    margin: 1.5rem 0;
-  }
-}
-
-
-
-
-
-
-
-
-/* Item Cards styling */
-.item-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 20px;
-  margin: 2rem 0;
-  padding: 1.5rem;
-  background-color: rgba(252, 251, 247, 0.03);
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.item-card {
-  background-color: #fcfbf7;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  padding: 1.25rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  display: flex;
-  flex-direction: column;
-  color: #333;
-}
-
-.item-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
-}
-
-.item-card-source {
-  font-family: 'Source Code Pro', monospace;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  color: #666;
-  margin-bottom: 0.5rem;
-}
-
-.item-card-title {
-  font-family: 'Playfair Display', serif;
-  font-size: 1.1rem;
-  line-height: 1.4;
+/* Fine-tuning details */
+.content-section > p:first-of-type:not(.emphasis):first-letter {
+  /* First letter of first paragraph in each section gets slightly enlarged */
+  font-size: 1.2em;
   font-weight: 600;
-  margin-bottom: 1rem;
-  flex-grow: 1;
-}
-
-.item-card-link {
-  align-self: flex-start;
-  font-family: 'Source Serif Pro', serif;
-  font-size: 0.85rem;
-  color: #555;
-  text-decoration: none;
-  border-bottom: 1px solid #ddd;
-  padding-bottom: 2px;
-  transition: color 0.2s ease, border-color 0.2s ease;
-}
-
-.item-card-link:hover {
-  color: #000;
-  border-color: #999;
-}
-
-/* Source Attribution styling */
-.source-attribution {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.75rem 0 1.5rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 4px;
-  border-left: 2px solid #ddd;
-}
-
-.source-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-}
-
-.source-icon img {
-  width: 16px;
-  height: 16px;
-}
-
-.source-info {
-  flex-grow: 1;
-  font-size: 0.85rem;
-  color: #555;
-}
-
-.source-title {
-  font-style: italic;
-}
-
-.context-tooltip {
-  position: relative;
-  display: inline-block;
-}
-
-.context-icon {
-  cursor: pointer;
-  font-size: 1rem;
-  color: #777;
-}
-
-.tooltip-content {
-  position: absolute;
-  top: calc(100% + 5px);
-  right: 0;
-  width: 300px;
-  padding: 1rem;
-  background-color: #fff;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  font-size: 0.85rem;
-  color: #333;
-  z-index: 10;
-  max-height: 200px;
-  overflow-y: auto;
-  line-height: 1.5;
-}
-
-/* Loading container styling */
-.loading-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem;
-  text-align: center;
-}
-
-.loading-spinner {
-  width: 50px;
-  height: 50px;
-  margin-bottom: 1rem;
-  border: 3px solid rgba(0, 0, 0, 0.1);
-  border-radius: 50%;
-  border-top-color: #333;
-  animation: spin 1s ease-in-out infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .item-cards {
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 15px;
-    padding: 1rem;
-  }
-
-  .item-card {
-    padding: 1rem;
-  }
-
-  .tooltip-content {
-    width: 250px;
-  }
-}
-
-@media (max-width: 480px) {
-  .item-cards {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Add this to your Article.css */
-.article-sources {
-  margin-top: 0;  /* Add space between article content and sources */
-  padding-top: 0rem;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
-  background-color: #f1eadf;
 }

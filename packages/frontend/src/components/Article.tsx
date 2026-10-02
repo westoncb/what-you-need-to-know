@@ -29,35 +29,36 @@ const Article = ({ report }) => {
         const itemsById = {};
         if (report.items) {
           report.items.forEach(item => {
-            itemsById[item.id] = item
+            itemsById[item.id] = item;
           });
 
-          console.log("test:", itemsById)
+          console.log("Items by ID:", itemsById);
         }
 
-        let ledeFound = false;
+        let introFound = false;
 
         // Parse the HTML content
         const options = {
           replace: (domNode) => {
             if (!domNode.attribs) return undefined;
 
+            // Insert ItemList after the intro paragraph if present
             if (
-              !ledeFound &&
+              !introFound &&
               domNode.type === 'tag' &&
               domNode.name === 'p' &&
-              domNode.attribs.class === 'lede'
+              domNode.attribs.class === 'intro'
             ) {
-              ledeFound = true; // Mark that we found the lede
+              introFound = true;
               return (
                 <>
-                  <p className="lede">{domToReact(domNode.children, options)}</p>
+                  <p className="intro">{domToReact(domNode.children, options)}</p>
                   <ItemList items={report.items} />
                 </>
               );
             }
 
-            // Handle sections with source IDs
+            // Handle content sections with source IDs
             if (
               domNode.type === 'tag' &&
               domNode.name === 'section' &&
@@ -66,23 +67,23 @@ const Article = ({ report }) => {
               const sourceId = domNode.attribs['data-source-id'];
               const sourceItem = itemsById[sourceId];
 
-              // Find the title node to attach the source attribution after it
+              // Find the section heading to attach the source attribution after it
               const children = [];
-              let titleProcessed = false;
+              let headingProcessed = false;
 
               for (let i = 0; i < domNode.children.length; i++) {
                 const child = domNode.children[i];
                 children.push(domToReact([child], options));
 
-                // After the section title, add the source attribution
+                // After the section heading, add the source attribution
                 if (
-                  !titleProcessed &&
+                  !headingProcessed &&
                   child.type === 'tag' &&
                   child.name === 'h2' &&
                   child.attribs &&
-                  child.attribs.class === 'section-title'
+                  child.attribs.class === 'section-heading'
                 ) {
-                  titleProcessed = true;
+                  headingProcessed = true;
                   if (sourceItem) {
                     children.push(<SourceAttribution key={`source-${sourceId}`} item={sourceItem} />);
                   }
