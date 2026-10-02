@@ -12,7 +12,7 @@ function snippet(v, bytes = 40) {
     : JSON.stringify(v).slice(0, bytes);
 }
 
-const styles = {
+const styles: Record<string, React.CSSProperties> = {
   card: {
     display: 'flex',
     flexDirection: 'column',
@@ -86,8 +86,8 @@ const styles = {
 };
 
 /* ───────────── card ───────────── */
-export function CallCard({ call }) {
-  const [open, setOpen] = React.useState(null);
+export function CallCard({ call }: { call: CallInfo }) {
+  const [open, setOpen] = React.useState<"input" | "prompt" | "output" | null>(null);
   const [hover, setHover] = React.useState(null);
 
   if (!call) return null;
@@ -104,6 +104,9 @@ export function CallCard({ call }) {
   };
 
   const statusInfo = getStatusInfo(call.state || "error");
+  if (call.state === "error" && call.disposition) {
+    statusInfo.label += ` · ${call.disposition === "fallback" ? "fallback used" : call.disposition}`;
+  }
 
   // Safely extract values from call to prevent object rendering issues
   const inputValue = call.input !== undefined ? snippet(call.input) : "—";
@@ -122,6 +125,11 @@ export function CallCard({ call }) {
               style={{...styles.statusIndicator, backgroundColor: statusInfo.color}}
             />
             <span style={styles.statusLabel}>{statusInfo.label}</span>
+            {call.attempts !== undefined && (
+              <span style={{ ...styles.timestamp, marginLeft: '8px' }}>
+                {call.attempts} {call.attempts === 1 ? 'attempt' : 'attempts'}
+              </span>
+            )}
           </div>
           <div style={styles.timestamp}>
             {call.started ? new Date(call.started).toLocaleTimeString() : "—"}
@@ -193,8 +201,8 @@ export function CallCard({ call }) {
 }
 
 /* ───────────── stage column ───────────── */
-export function StageColumn({ stage }) {
-  const columnStyles = {
+export function StageColumn({ stage }: { stage: StageInfo }) {
+  const columnStyles: Record<string, React.CSSProperties> = {
     container: {
       display: 'flex',
       flexDirection: 'column',

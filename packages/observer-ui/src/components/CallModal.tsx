@@ -15,7 +15,18 @@ export function CallModal({ call, section, onClose }: Props) {
   const content =
     section === "input"  ? call.input  :
     section === "prompt" ? call.prompt :
-    call.error ?? call.output;
+    call.state === "error" ? {
+      error: call.error,
+      disposition: call.disposition,
+      attempts: call.attempts,
+      errorInfo: call.errorInfo,
+      raw: call.raw,
+      fallbackOutput: call.output,
+      recoveryError: call.recoveryError,
+    } : call.output;
+
+  const escapeHTML = (value: string) => value
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   // Format the content more intelligently
   const formatContent = (content) => {
@@ -76,7 +87,7 @@ export function CallModal({ call, section, onClose }: Props) {
   const processContentForDisplay = () => {
     if (typeof content !== 'object') {
       // Handle simple string content - preserve whitespace and line breaks
-      return formattedContent;
+      return escapeHTML(formattedContent);
     }
 
     try {
@@ -84,7 +95,7 @@ export function CallModal({ call, section, onClose }: Props) {
       const jsonObj = typeof content === 'string' ? JSON.parse(content) : content;
       return renderJSONWithFormattedStrings(jsonObj);
     } catch (e) {
-      return formattedContent;
+      return escapeHTML(formattedContent);
     }
   };
 
@@ -142,7 +153,7 @@ export function CallModal({ call, section, onClose }: Props) {
       let result = `{\n`;
       for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
-        result += `${nextIndentStr}<span style="color: #80cbc4;">"${key}"</span>: ${renderJSONWithFormattedStrings(obj[key], indent + 1)}`;
+        result += `${nextIndentStr}<span style="color: #80cbc4;">"${escapeHTML(key)}"</span>: ${renderJSONWithFormattedStrings(obj[key], indent + 1)}`;
         if (i < keys.length - 1) result += ',';
         result += '\n';
       }
@@ -153,7 +164,7 @@ export function CallModal({ call, section, onClose }: Props) {
     return String(obj);
   };
 
-  const styles = {
+  const styles: Record<string, React.CSSProperties> = {
     overlay: {
       zIndex: 1000,
       position: "fixed",
@@ -309,6 +320,8 @@ export function CallModal({ call, section, onClose }: Props) {
           <div style={styles.infoItem}>Started: {formatTime(call.started)}</div>
           {call.latency && <div style={styles.infoItem}>Latency: {call.latency}ms</div>}
           <div style={styles.infoItem}>Status: {call.state}</div>
+          {call.disposition && <div style={styles.infoItem}>Outcome: {call.disposition}</div>}
+          {call.attempts !== undefined && <div style={styles.infoItem}>Attempts: {call.attempts}</div>}
         </div>
 
         <div style={styles.contentContainer} ref={contentRef}>

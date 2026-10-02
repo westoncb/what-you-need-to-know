@@ -3,6 +3,7 @@ import fs from "fs";
 import { createRequire } from "module";
 import path from "path";
 import dotenv from "dotenv";
+import { randomUUID } from "node:crypto";
 import type { ModelSettings, PipelineRole, WriterConfig } from "./models";
 dotenv.config();
 
@@ -58,9 +59,15 @@ export class DB {
   }
 
   async close() {
-    const data = this.db.export();
-    fs.writeFileSync(this.file, Buffer.from(data));
-    this.db.close();
+    // The temporary file must share the destination directory for atomic rename.
+    const temporary = `${this.file}.${randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(temporary, Buffer.from(this.db.export()), { flag: "wx" });
+      fs.renameSync(temporary, this.file);
+    } finally {
+      try { fs.rmSync(temporary, { force: true }); }
+      finally { this.db.close(); }
+    }
   }
 
   /* ---------- schema ---------- */

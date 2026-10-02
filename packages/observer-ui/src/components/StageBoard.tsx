@@ -19,7 +19,7 @@ export function StageBoard() {
     let running = 0;
 
     for (const stage of stages.values()) {
-      if (stage.calls && stage.calls.length > 0) active++;
+      if (stage.openCalls > 0) active++;
       if (stage.calls) total += stage.calls;
       if (stage.openCalls) running += stage.openCalls;
     }
@@ -30,7 +30,7 @@ export function StageBoard() {
     setRefreshTime(new Date());
   }, [stages]);
 
-  const styles = {
+  const styles: Record<string, React.CSSProperties> = {
     container: {
       display: "flex",
       flexDirection: "column",

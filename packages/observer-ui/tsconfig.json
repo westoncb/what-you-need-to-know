@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "jsx": "react-jsx", "rootDir": "src", "baseUrl": ".",
+      "module": "ESNext", "moduleResolution": "bundler", "types": ["node"],
       "paths": {
         "@wyntn/common/*": ["../../packages/common/*"]
       }},
