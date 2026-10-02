@@ -5,7 +5,7 @@ import { StageBoard } from "./components/StageBoard.jsx";
 export default function App() {
   const { onEvent } = useFlow();
 
-  useWebSocket("ws://localhost:4000", onEvent, { maxRetries: 100 });
+  useWebSocket("ws://127.0.0.1:4000", onEvent, { maxRetries: 100 });
 
   return (
     <div>

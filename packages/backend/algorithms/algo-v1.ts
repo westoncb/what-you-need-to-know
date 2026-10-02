@@ -3,6 +3,7 @@ import { Flow, SKIP, InvalidResponseError, LLMError } from "@wyntn/common/src/t-
 import { randomUUID } from "node:crypto";
 import { JSDOM } from "jsdom";
 import { modelConfig, type WriterConfig } from "@wyntn/common/src/models";
+import { defaultRunOptions, type GenerationOptions } from "../run-options";
 import { type RationaleItem, type Enriched, type WrittenArticle,
   whyPrompt, judgePrompt, duelPrompt, makeNarrativePrompt,
   ctxPrompt, markupPrompt } from "./prompts";
@@ -20,11 +21,6 @@ const { stages } = modelConfig;
 /* ------------------------------------------------------------------ */
 /* Utility                                                             */
 /* ------------------------------------------------------------------ */
-function todayPhoenix(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Phoenix" })
-           .format(new Date()).slice(0, 10);
-}
-
 // Retrying other items/writers cannot repair a missing key, rejected credentials,
 // or exhausted credit. A retryable 402 is an in-flight budget limit, not exhaustion.
 function isSharedBlocker(error: unknown): boolean {
@@ -318,14 +314,14 @@ export async function writeArticle(writer: WriterConfig, runId: string, items: E
   return report;
 }
 
-export async function run() {
+export async function run({ date: day, limit }: GenerationOptions = defaultRunOptions()) {
   const db = new DB();
   await db.open();
-  const day = todayPhoenix();
   let raw: NewsItem[];
-  try { raw = db.getNews(day, 50); }
+  try { raw = db.getNews(day, limit); }
   finally { await db.close(); }
   if (!raw.length) throw new Error(`No news for ${day}; run news:fetch first.`);
+  console.log(`Generating reports for ${day} from ${raw.length} news items (limit ${limit}).`);
 
   const items = await prepareSources(raw);
   const runId = randomUUID();

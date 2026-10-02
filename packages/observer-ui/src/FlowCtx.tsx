@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useState } from "react";
 import type { FlowEvent, StageInfo } from "@wyntn/common"; // adjust import to your path
 
 /* ------------------------------------------------------------------
@@ -25,11 +25,11 @@ export function FlowProvider({ children }:{ children: React.ReactNode }) {
   const [stages, setStages] = useState<Map<string, StageInfo>>(new Map());
 
   /** WebSocket → observer events funnel into here. */
-  function onEvent(evt: FlowEvent) {
+  const onEvent = useCallback((evt: FlowEvent) => {
     if (evt.t !== "snapshot") return;          // we ignore everything else
     // Replace the map wholesale to keep state immutable
     setStages(new Map(Object.entries(evt.stages)));
-  }
+  }, []);
 
   return (
     <FlowCtx.Provider value={{ stages, onEvent }}>

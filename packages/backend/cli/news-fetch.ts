@@ -2,6 +2,8 @@ import { DB, NewsItem } from "@wyntn/common/src/db";
 import { XMLParser } from "fast-xml-parser";
 import fetch from "node-fetch";
 import { ContentExtractor } from "../utils/content-extractor";
+import { defaultRunOptions, REPORT_TIME_ZONE, type GenerationOptions } from "../run-options";
+import { isMain, runCommand } from "./command";
 
 interface HNSearchResponse {
   hits: Array<{
@@ -13,14 +15,6 @@ interface HNSearchResponse {
 }
 
 /* ---------- Helpers ---------------------------------------------- */
-
-function todayPhoenix(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Phoenix",
-  })
-    .format(new Date())
-    .slice(0, 10); // YYYY-MM-DD
-}
 
 function toNewsItemHN(hit: any, day: string, extractedContent?: string): NewsItem {
   return {
@@ -146,54 +140,50 @@ async function fetchArxiv(day: string): Promise<NewsItem[]> {
 
 /* ---------- CLI --------------------------------------------------- */
 
-(async () => {
+export async function fetchNews({ date: day }: Pick<GenerationOptions, "date"> = defaultRunOptions()) {
   console.log("Starting news fetcher...");
-  const day = todayPhoenix();
-  console.log(`📅 Fetching news for ${day} (America/Phoenix)`);
+  console.log(`📅 Fetching current news into ${day} (${REPORT_TIME_ZONE})`);
 
-  try {
-    const [hnItems, arxivItems] = await Promise.all([
-      fetchHN(day),
-      fetchArxiv(day),
-    ]);
+  const [hnItems, arxivItems] = await Promise.all([
+    fetchHN(day),
+    fetchArxiv(day),
+  ]);
 
-    console.log(`Found ${hnItems.length} HN items and ${arxivItems.length} arXiv items`);
+  console.log(`Found ${hnItems.length} HN items and ${arxivItems.length} arXiv items`);
 
-    // Log summary content length statistics
-    const hnContentStats = hnItems.map(item => item.summary?.length || 0);
-    const avgHnContentLength = hnContentStats.reduce((a, b) => a + b, 0) / hnContentStats.length || 0;
-    console.log(`Average HN content length: ${Math.round(avgHnContentLength)} characters`);
+  // Log summary content length statistics
+  const hnContentStats = hnItems.map(item => item.summary?.length || 0);
+  const avgHnContentLength = hnContentStats.reduce((a, b) => a + b, 0) / hnContentStats.length || 0;
+  console.log(`Average HN content length: ${Math.round(avgHnContentLength)} characters`);
 
-    // Show how many items have substantial content
-    const itemsWithContent = hnItems.filter(item => item.summary?.length > 200).length;
-    console.log(`HN items with substantial content: ${itemsWithContent}/${hnItems.length}`);
+  // Show how many items have substantial content
+  const itemsWithContent = hnItems.filter(item => item.summary?.length > 200).length;
+  console.log(`HN items with substantial content: ${itemsWithContent}/${hnItems.length}`);
 
-    // Detailed content analysis
-    console.log("\nDetailed content analysis:");
-    hnItems.forEach((item, index) => {
-      console.log(`[${index + 1}] ID: ${item.id} | URL: ${item.url.substring(0, 50)}${item.url.length > 50 ? '...' : ''}`);
-      console.log(`    Title: ${item.title.substring(0, 50)}${item.title.length > 50 ? '...' : ''}`);
-      console.log(`    Summary length: ${item.summary?.length || 0} chars`);
-      if (item.summary?.length === 0) {
-        console.log(`    WARNING: No content extracted for this item!`);
-      }
-      console.log(``);
-    });
+  // Detailed content analysis
+  console.log("\nDetailed content analysis:");
+  hnItems.forEach((item, index) => {
+    console.log(`[${index + 1}] ID: ${item.id} | URL: ${item.url.substring(0, 50)}${item.url.length > 50 ? '...' : ''}`);
+    console.log(`    Title: ${item.title.substring(0, 50)}${item.title.length > 50 ? '...' : ''}`);
+    console.log(`    Summary length: ${item.summary?.length || 0} chars`);
+    if (item.summary?.length === 0) {
+      console.log(`    WARNING: No content extracted for this item!`);
+    }
+    console.log(``);
+  });
 
-    const db = new DB();
-    await db.open();
+  const db = new DB();
+  await db.open();
 
-    console.log("Storing items in database...");
-    for (const item of hnItems) await db.upsertNews(item);
-    for (const item of arxivItems) await db.upsertNews(item);
+  console.log("Storing items in database...");
+  for (const item of hnItems) await db.upsertNews(item);
+  for (const item of arxivItems) await db.upsertNews(item);
 
-    await db.close();
+  await db.close();
 
-    console.log(
-      `✅ Stored ${hnItems.length} HN & ${arxivItems.length} arXiv items in SQLite`,
-    );
-  } catch (error) {
-    console.error("Error during execution:", error);
-    process.exit(1);
-  }
-})();
+  console.log(
+    `✅ Stored ${hnItems.length} HN & ${arxivItems.length} arXiv items in SQLite`,
+  );
+}
+
+if (isMain(import.meta.url)) void runCommand("news:fetch", fetchNews);
