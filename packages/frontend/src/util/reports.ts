@@ -21,7 +21,6 @@ export interface ReportItem {
   url?: string;
   summary: string;
   context: string;
-  overview: string;
   why: string;
 }
 
@@ -72,7 +71,6 @@ export function normalizeReport(value: unknown, day: string): PublishedReport {
         url: sourceUrl(item.url),
         summary: text(item.summary),
         context: text(entry.context),
-        overview: text(entry.overview),
         why: text(entry.why),
       };
     }),

@@ -3,10 +3,9 @@ import { Flow, SKIP, InvalidResponseError, LLMError } from "@wyntn/common/src/t-
 import { randomUUID } from "node:crypto";
 import { JSDOM } from "jsdom";
 import { modelConfig, type WriterConfig } from "@wyntn/common/src/models";
-import {WhyObj, Enriched, EnhancedItem,
-  whyPrompt, judgePrompt, duelPrompt,
-  makeNarrativePrompt, overviewPrompt,
-  ctxPrompt, markupPrompt} from './prompts'
+import { type RationaleItem, type Enriched, type WrittenArticle,
+  whyPrompt, judgePrompt, duelPrompt, makeNarrativePrompt,
+  ctxPrompt, markupPrompt } from "./prompts";
 
 /* ------------------------------------------------------------------ */
 /* Config                                                             */
@@ -45,50 +44,121 @@ function requireText(raw: string): string {
 function validateSources(items: Enriched[]): void {
   if (!items.length || items.some(source =>
     !source?.item?.id?.trim() || !source.item.title?.trim() ||
-    !source.item.url?.trim() || !source.why?.trim() || !source.overview?.trim() ||
-    typeof source.context !== "string"
+    !source.item.url?.trim() || !source.item.summary?.trim() ||
+    typeof source.why !== "string" || typeof source.context !== "string"
   )) {
     throw new Error("Shared source preparation produced no usable selection or incomplete source data.");
   }
 }
 
-function parseMarkup(raw: string, items: Enriched[]): string {
+function parseObject(raw: string): Record<string, unknown> {
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); }
+  catch (error) { throw new InvalidResponseError("Expected a JSON object.", error); }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new InvalidResponseError("Expected a JSON object.");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function parseParagraphs(value: unknown, allowEmpty = false): string[] {
+  if (!Array.isArray(value) || (!allowEmpty && !value.length) ||
+      value.some(p => typeof p !== "string" || !p.trim())) {
+    throw new InvalidResponseError("Expected an array of nonempty paragraphs.");
+  }
+  return value.map(p => p.trim());
+}
+
+function parseNarrative(raw: string, items: Enriched[]): WrittenArticle {
+  const parsed = parseObject(raw);
+  const intro = parseParagraphs(parsed.intro, true);
+  if (!Array.isArray(parsed.sections) || parsed.sections.length !== items.length) {
+    throw new InvalidResponseError("Expected exactly one article section per selected source.");
+  }
+  const sections = parsed.sections.map((section, index) => {
+    if (!section || typeof section !== "object" || Array.isArray(section) ||
+        section.source_id !== items[index].item.id ||
+        typeof section.heading !== "string" || !section.heading.trim()) {
+      throw new InvalidResponseError("Expected ordered source IDs and a heading for every section.");
+    }
+    return {
+      source_id: section.source_id as string,
+      heading: section.heading.trim(),
+      paragraphs: parseParagraphs(section.paragraphs),
+    };
+  });
+  return { intro, sections };
+}
+
+function articleText(document: WrittenArticle): string {
+  return [...document.intro, ...document.sections.flatMap(s => [s.heading, ...s.paragraphs])].join("\n\n");
+}
+
+function parseMarkup(raw: string, document: WrittenArticle): string {
   const html = requireText(raw);
-  // Parsing alone repairs truncated HTML; require the complete wrapper too.
   if (!/^<article\b[\s\S]*<\/article>$/i.test(html)) {
     throw new InvalidResponseError("Expected a complete <article> HTML fragment without code fences.");
   }
   const fragment = JSDOM.fragment(html);
-  // These nodes do not supply article text after the frontend sanitizes it.
-  fragment.querySelectorAll("script, style, template").forEach(node => node.remove());
-  const article = fragment.querySelector("article.content-piece");
-  if (fragment.children.length !== 1 || !article || article !== fragment.firstElementChild ||
-      !Array.from(article.querySelectorAll("p")).some(p => p.textContent?.trim())) {
-    throw new InvalidResponseError("Expected an article.content-piece containing readable paragraphs.");
+  const invalid = () => { throw new InvalidResponseError("HTML must preserve the writer's exact paragraphs, headings, order, and source IDs."); };
+  // Require explicit blocks: unwrapped text/comments would evade paragraph checks.
+  function children(node: ParentNode): Element[] {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType !== 1 && !(child.nodeType === 3 && !child.textContent?.trim())) invalid();
+    }
+    return Array.from(node.children);
   }
-  const ids = new Set(items.map(source => source.item.id));
-  if (Array.from(article.querySelectorAll("[data-source-id]")).some(el =>
-    !ids.has(el.getAttribute("data-source-id")!)
-  )) {
-    throw new InvalidResponseError("HTML refers to an unknown source ID.");
+  const roots = children(fragment);
+  const article = roots[0];
+  if (roots.length !== 1 || article?.tagName !== "ARTICLE" || article.className !== "content-piece") invalid();
+  const allowedClasses: Record<string, string[]> = {
+    ARTICLE: ["content-piece"], SECTION: ["content-section"], H2: ["section-heading"],
+    P: ["", "intro", "emphasis"], SPAN: ["highlight"], STRONG: [""], EM: [""],
+    CODE: [""], SUP: [""], SUB: [""],
+  };
+  for (const el of [article, ...Array.from(article.querySelectorAll("*"))]) {
+    if (!allowedClasses[el.tagName]?.includes(el.className) ||
+        Array.from(el.attributes).some(attr => attr.name !== "class" &&
+          !(el.tagName === "SECTION" && attr.name === "data-source-id"))) invalid();
   }
+  const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
+  function block(el: Element | undefined, tag: string, expected: string) {
+    if (!el || el.tagName !== tag || normalize(el.textContent ?? "") !== normalize(expected)) invalid();
+    // Only text and inline emphasis may occur within a paragraph/heading.
+    for (const descendant of Array.from(el!.querySelectorAll("*"))) {
+      if (!["STRONG", "EM", "CODE", "SUP", "SUB", "SPAN"].includes(descendant.tagName)) invalid();
+    }
+  }
+  const blocks = children(article);
+  if (blocks.length !== document.intro.length + document.sections.length) invalid();
+  document.intro.forEach((paragraph, index) => {
+    block(blocks[index], "P", paragraph);
+    if (blocks[index].className !== "intro") invalid();
+  });
+  document.sections.forEach((source, index) => {
+    const section = blocks[document.intro.length + index];
+    if (section.tagName !== "SECTION" || section.className !== "content-section" ||
+        section.getAttribute("data-source-id") !== source.source_id) invalid();
+    const parts = children(section);
+    if (parts.length !== 1 + source.paragraphs.length) invalid();
+    block(parts[0], "H2", source.heading);
+    source.paragraphs.forEach((paragraph, i) => {
+      block(parts[i + 1], "P", paragraph);
+      if (parts[i + 1].className === "intro") invalid();
+    });
+  });
   return html;
-}
-
-/* bullet-list formatter used by fold() */
-function bullet(e: Enriched): string {
-  return `• **Title: ${e.item.title}**\n<extract>${e.item.summary}</extract>\n\n`;
 }
 
 /* internal accumulator while folding */
 interface BuildCtx {
-  bullets : string;        // for narrative prompt
+  document: WrittenArticle;
   report  : DailyReport;
 }
 
 function makeSeed(writer: WriterConfig, runId: string, items: Enriched[]): BuildCtx {
   return {
-    bullets : items.map(item => bullet(item) + "\n\n").join(""),
+    document: { intro: [], sections: [] },
     report  : {
       generated_at : new Date().toISOString(),
       model: writer.model,
@@ -108,8 +178,8 @@ function makeSeed(writer: WriterConfig, runId: string, items: Enriched[]): Build
 /* ------------------------------------------------------------------ */
 export async function prepareSources(raw: NewsItem[]): Promise<Enriched[]> {
   const counts = {
-    rationaleSkipped: 0, judgmentSkipped: 0, overviewSkipped: 0,
-    relevanceRejected: 0, selectionFallbacks: 0, contextUnavailable: 0,
+    emptySourceSkipped: 0, rationaleSkipped: 0,
+    relevanceRejected: 0, contextUnavailable: 0,
   };
   const recover = (error: LLMError, counter: keyof typeof counts) => {
     if (isSharedBlocker(error)) throw error;
@@ -120,8 +190,15 @@ export async function prepareSources(raw: NewsItem[]): Promise<Enriched[]> {
     const items = await Flow
     .from<NewsItem>(raw, { onError: error => console.warn(`[Source preparation] ${error.message}`) })
 
+    // A title alone is insufficient evidence for a detailed article.
+    .filter(item => {
+      if (item.summary.trim()) return true;
+      counts.emptySourceSkipped++;
+      return false;
+    })
+
     /* 1a ─ rationale ------------------------------------------------- */
-    .llmMap<WhyObj>(
+    .llmMap<RationaleItem>(
       whyPrompt,
       {
         ...stages.readingRationale,
@@ -129,7 +206,7 @@ export async function prepareSources(raw: NewsItem[]): Promise<Enriched[]> {
         /* merge raw string with the source item */
         post: (raw, item) => ({
           item,
-          why: requireText(raw),
+          rationale: requireText(raw),
         }),
         onFailure: error => { recover(error, "rationaleSkipped"); return SKIP; },
       },
@@ -138,7 +215,7 @@ export async function prepareSources(raw: NewsItem[]): Promise<Enriched[]> {
 
     /* 1b ─ judge   --------------------------------------------------- */
     .llmFilter(
-      (o: WhyObj) => judgePrompt(o.why),
+      judgePrompt,
       {
         ...stages.relevanceJudge,
         post: raw => {
@@ -149,29 +226,14 @@ export async function prepareSources(raw: NewsItem[]): Promise<Enriched[]> {
           if (verdict === "SKIP") counts.relevanceRejected++;
           return verdict === "KEEP";
         },
-        onFailure: error => { recover(error, "judgmentSkipped"); return SKIP; },
       },
       JUDGE_CONC,
-    )
-
-    /* 1c ─ overview synthesis --------------------------------------- */
-    .llmMap<EnhancedItem>(
-      overviewPrompt,
-      {
-        ...stages.sourceOverview,
-        post: (raw, item) => ({
-          ...item,
-          overview: requireText(raw),
-        }),
-        onFailure: error => { recover(error, "overviewSkipped"); return SKIP; },
-      },
-      DEFAULT_CONCURRENCY,
     )
 
     /* 2 ─ tournament to TOP_K --------------------------------------- */
     .llmSelect(
       TOP_K,
-      (a: EnhancedItem, b: EnhancedItem) => duelPrompt(a, b),
+      duelPrompt,
       {
         ...stages.articleSelection,
         post: (raw, pair) => {
@@ -181,7 +243,6 @@ export async function prepareSources(raw: NewsItem[]): Promise<Enriched[]> {
           }
           return verdict === "A" ? pair.a : pair.b;
         },
-        onFailure: (error, pair) => { recover(error, "selectionFallbacks"); return pair.a; },
       },
       DUEL_CONC,
     )
@@ -193,18 +254,16 @@ export async function prepareSources(raw: NewsItem[]): Promise<Enriched[]> {
       {
         ...stages.backgroundContext,
         post: (raw, src) => {
-          let parsed: unknown;
-          try { parsed = JSON.parse(raw); }
-          catch (error) { throw new InvalidResponseError("Expected context JSON.", error); }
-          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
-              !("context" in parsed) || typeof parsed.context !== "string") {
-            throw new InvalidResponseError("Expected an object with a context string.");
+          const parsed = parseObject(raw);
+          if (typeof parsed.context !== "string" || typeof parsed.why !== "string") {
+            throw new InvalidResponseError("Expected context and why strings.");
           }
-          return { ...src, context: requireText(parsed.context) };
+          // Explicit projection keeps the private rationale out of published data.
+          return { item: src.item, context: requireText(parsed.context), why: requireText(parsed.why) };
         },
         onFailure: (error, src) => {
           recover(error, "contextUnavailable");
-          return { ...src, context: "" };
+          return { item: src.item, why: "", context: "" };
         },
       },
     )
@@ -223,25 +282,28 @@ export async function writeArticle(writer: WriterConfig, runId: string, items: E
   validateSources(items);
   const { id, name, ...settings } = writer;
   const reportArr = await Flow.from([makeSeed(writer, runId, items)])
-      /* ---- stage-5: narrative (plain prose) -------------------- */
+      /* ---- independent article writing ----------------------- */
       .llmMap<BuildCtx>(
-        obj => makeNarrativePrompt(writer.model)(obj.bullets),
+        obj => makeNarrativePrompt(writer.model)(obj.report.items),
         {
           ...settings,
+          // The envelope is a pipeline contract, independent of writer settings.
+          response_format: { type: "json_object" },
           post : (raw, obj) => {
-            return { ...obj, report: { ...obj.report, narrative_raw: requireText(raw) } };
+            const document = parseNarrative(raw, obj.report.items);
+            return { ...obj, document, report: { ...obj.report, narrative_raw: articleText(document) } };
           },
         },
         1,
       )
 
-      /* ---- stage-6: markup (HTML/CSS) -------------------------- */
+      /* ---- shared formatting model, called for each article --- */
       .llmMap<BuildCtx>(
-        obj => markupPrompt(obj.report.narrative_raw, obj.report.items),
+        obj => markupPrompt(obj.document),
         {
           ...stages.htmlFormatting,
           post : (raw, obj) => {
-            return { ...obj, report: { ...obj.report, narrative_html: parseMarkup(raw, obj.report.items) } };
+            return { ...obj, report: { ...obj.report, narrative_html: parseMarkup(raw, obj.document) } };
           },
         },
         1,

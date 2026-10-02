@@ -28,7 +28,6 @@ export interface DailyReport {
   items: Array<{
     item: NewsItem;
     why: string;
-    overview: string;
     context: string;
   }>;
 }

@@ -15,7 +15,6 @@ export interface WriterConfig extends ModelSettings {
 export type PipelineRole =
   | "readingRationale"
   | "relevanceJudge"
-  | "sourceOverview"
   | "articleSelection"
   | "backgroundContext"
   | "htmlFormatting";
@@ -27,8 +26,8 @@ export const modelConfig: {
   stages: {
     readingRationale: { model: "~openai/gpt-luna-latest", temperature: 0.4, max_tokens: 800 },
     relevanceJudge: { model: "~openai/gpt-luna-latest", temperature: 0 },
-    sourceOverview: { model: "~openai/gpt-luna-latest", temperature: 0.4, max_tokens: 1000 },
     articleSelection: { model: "~openai/gpt-luna-latest", temperature: 0 },
+    // Public context and why-to-read notes, generated without the private profile.
     backgroundContext: {
       model: "~openai/gpt-luna-latest", temperature: 0, max_tokens: 600,
       response_format: { type: "json_object" },
