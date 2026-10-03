@@ -65,7 +65,7 @@ export function commandHelp(command: Command): string {
     `--date     Report date (default: today in ${REPORT_TIME_ZONE}).`,
     ...(generation ? [
       `--limit    Maximum stored news items sent into generation (default: ${DEFAULT_INPUT_LIMIT}).`,
-      "--observe  Open the local observer connection on 127.0.0.1:4000 during generation.",
+      "--observe  Launch the observer dashboard and open it in your browser during generation.",
     ] : []),
     "--help, -h Show this help.",
     "",

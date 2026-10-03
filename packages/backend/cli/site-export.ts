@@ -38,6 +38,12 @@ export async function exportReports(outDir = OUT_DIR) {
     await db.close();
   }
 
+  // A failed generation or an empty database must not clear a published index.
+  // Check before creating directories or replacing any exported files.
+  if (!byDay.size) {
+    throw new Error("No reports found in the database; existing exported files were left unchanged. Generate a report successfully before exporting.");
+  }
+
   fs.mkdirSync(outDir, { recursive: true });
 
   const index: ReportIndexEntry[] = [];

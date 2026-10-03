@@ -28,7 +28,10 @@ function isSharedBlocker(error: unknown): boolean {
   // OpenRouter may put a numeric error code in an HTTP 200 envelope.
   const status = typeof error.code === "number" ? error.code : error.status;
   return error.kind === "configuration" || status === 401 ||
-    (status === 402 && !error.retryable);
+    (status === 402 && !error.retryable) ||
+    // Key spending caps are reported as 403. Other 403s may be item-specific
+    // (for example, moderation), so do not classify every forbidden response here.
+    (status === 403 && /\bkey limit exceeded\b/i.test(error.message));
 }
 
 function requireText(raw: string): string {

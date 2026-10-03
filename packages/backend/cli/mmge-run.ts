@@ -6,16 +6,24 @@ import { isMain, runCommand } from "./command";
 
 export async function generateReports(options: RunOptions = defaultRunOptions()) {
   const logger = options.observe ? await startWsServer(4000) : null;
-  if (logger) {
-    setLogger(logger, { snapshotMs: 500 });
-    console.log("Observer connection: ws://127.0.0.1:4000 (dashboard: pnpm dev:observer).");
-  }
+  let closeDashboard: (() => Promise<void>) | undefined;
   try {
+    if (logger) {
+      setLogger(logger, { snapshotMs: 500 });
+      const { startObserverDashboard } = await import("../../observer-ui/dev-server");
+      const dashboard = await startObserverDashboard();
+      closeDashboard = dashboard.close;
+      console.log(`Observer dashboard: ${dashboard.url}`);
+    }
     await run(options);
   } finally {
-    if (logger) {
-      setLogger(null);
-      await logger.close();
+    try {
+      if (logger) {
+        setLogger(null);
+        await logger.close();
+      }
+    } finally {
+      await closeDashboard?.();
     }
   }
 }

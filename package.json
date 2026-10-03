@@ -7,7 +7,7 @@
     "apps/observer-ui"
   ],
   "scripts": {
-    "test": "tsx --test packages/backend/cli/commands.test.ts packages/observer-ui/tests/websocket.test.tsx",
+    "test": "tsx --test packages/backend/cli/*.test.ts packages/observer-ui/tests/*.test.tsx",
     "news:run": "tsx packages/backend/cli/news-run.ts",
     "news:fetch": "tsx packages/backend/cli/news-fetch.ts",
     "mmge:run": "tsx packages/backend/cli/mmge-run.ts",

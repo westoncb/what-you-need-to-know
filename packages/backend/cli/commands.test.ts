@@ -106,7 +106,7 @@ test("CLI help and validation have no work side effects; missing news exits nonz
     await assert.rejects(cli("mmge-run", ["--date", "2000-01-01", "--limit", "1"]), error => {
       assert.equal((error as any).code, 1);
       assert.match((error as any).stderr, /No news for 2000-01-01/);
-      assert.doesNotMatch((error as any).stdout, /Observer connection/);
+      assert.doesNotMatch((error as any).stdout, /Observer dashboard/);
       return true;
     });
   } finally {
@@ -131,7 +131,7 @@ test("generation needs port 4000 only with --observe and releases it on failure"
   const dir = await mkdtemp(path.join(tmpdir(), "wyntn-observer-test-"));
   const cli = (extra: string[]) => exec(process.execPath,
     ["--import", "tsx", "packages/backend/cli/mmge-run.ts", "--date", "2000-01-01", ...extra],
-    { cwd: root, env: { ...process.env, DB_PATH: path.join(dir, "test.db"), OPENROUTER_API_KEY: "" }, timeout: 10_000 });
+    { cwd: root, env: { ...process.env, DB_PATH: path.join(dir, "test.db"), OPENROUTER_API_KEY: "", BROWSER: "none" }, timeout: 10_000 });
   try {
     await assert.rejects(cli([]), error => {
       assert.match((error as any).stderr, /No news for 2000-01-01/);
@@ -146,7 +146,7 @@ test("generation needs port 4000 only with --observe and releases it on failure"
     await new Promise<void>(resolve => busy.close(() => resolve()));
     await assert.rejects(cli(["--observe"]), error => {
       assert.equal((error as any).code, 1);
-      assert.match((error as any).stdout, /Observer connection/);
+      assert.match((error as any).stdout, /Observer dashboard: http:\/\/127\.0\.0\.1:/);
       assert.match((error as any).stderr, /No news for 2000-01-01/);
       return true;
     });
