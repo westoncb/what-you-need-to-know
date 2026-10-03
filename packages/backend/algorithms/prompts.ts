@@ -6,6 +6,7 @@ import type { ChatMsg } from "@wyntn/common/src/t-flow/llm";
 export interface RationaleItem { item: NewsItem; rationale: string }
 export interface Enriched { item: NewsItem; why: string; context: string }
 export interface WrittenArticle {
+  title: string;
   intro: string[];
   sections: Array<{ source_id: string; heading: string; paragraphs: string[] }>;
 }
@@ -71,18 +72,21 @@ Evidence boundaries:
 - Make clear in your prose when something is a source's claim, your general explanatory background, or your own judgment/speculation. You may question the source's claims and give a candid assessment.
 - Where missing evidence materially limits a specific explanation or assessment, acknowledge that limitation locally in the relevant section. Do not invent the missing information. Avoid blanket disclaimers or announcements of how you will handle the evidence.
 
+Give the article a concise, specific title that reflects its content, without inventing a common theme for unrelated subjects.
+
 Open with one short paragraph about the subject matter itself. Establish an interesting observation, question, or tension grounded in the sources, and lead naturally into the detailed discussion. Do not catalogue the items, announce what you will cover, discuss the supplied material, or explain your writing process. Draw connections where they genuinely exist, without forcing unrelated subjects into a common theme.
 
 Write natural paragraphs in your own voice, without bullet lists or tables. Return the prose in this JSON envelope so it can be linked to its sources without guessing:
-{"intro":["your introductory paragraph"],"sections":[{"source_id":"exact supplied ID","heading":"your heading","paragraphs":["your paragraph","another paragraph"]}]}
-The intro array must contain exactly one nonempty introductory paragraph. Include exactly one section per supplied source, in supplied order, with its exact ID, a nonempty heading, and one or more nonempty paragraphs. Each section must explain its assigned source. Strings contain plain text, not Markdown or HTML. The JSON structure is only a transport format; it must not make the prose into a list. Return only this JSON object.`,
+{"title":"your article title","intro":["your introductory paragraph"],"sections":[{"source_id":"exact supplied ID","heading":"your heading","paragraphs":["your paragraph","another paragraph"]}]}
+The title must be a nonempty plain-text string. The intro array must contain exactly one nonempty introductory paragraph. Include exactly one section per supplied source, in supplied order, with its exact ID, a nonempty heading, and one or more nonempty paragraphs. Each section must explain its assigned source. Strings contain plain text, not Markdown or HTML. The JSON structure is only a transport format; it must not make the prose into a list. Return only this JSON object.`,
   { sources: items.map(item => source(item.item)) },
 );
 
 export const markupPrompt = (document: WrittenArticle): ChatMsg[] => messages(
-  `You are a document markup specialist. Format the supplied writer's document as HTML. You are not an author or editor: copy every heading and paragraph verbatim, in order. Do not add, omit, summarize, rewrite, correct, or move words. Do not add new headings, labels, captions, commentary, links, or quotations. Escape text for HTML where needed; whitespace changes are allowed.
+  `You are a document markup specialist. Format the supplied writer's document as HTML. You are not an author or editor: copy the title and every heading and paragraph verbatim, in order. Do not add, omit, summarize, rewrite, correct, or move words. Do not add new headings, labels, captions, commentary, links, or quotations. Escape text for HTML where needed; whitespace changes are allowed.
 
-Return one complete <article class="content-piece"> fragment with:
+Return one complete <article class="content-piece"> fragment with, in this order:
+- Exactly one <h1 class="main-title"> containing the document title, before the introduction.
 - One <p class="intro"> per intro paragraph, in order.
 - One <section class="content-section" data-source-id="EXACT_ID"> per document section, in order. Copy source_id exactly; do not infer or change attribution.
 - Each section contains its heading in one <h2 class="section-heading">, followed by one <p> per paragraph, in order.

@@ -19,23 +19,9 @@ export default function Article({ report }: { report: PublishedReport }) {
   const parsed = useMemo(() => {
     try {
       const itemsById = new Map(report.items.map(item => [item.id, item]));
-      let introFound = false;
       const options: HTMLReactParserOptions = {
         replace: domNode => {
           if (!("attribs" in domNode)) return;
-
-          if (!introFound && domNode.name === "p" &&
-              domNode.attribs.class?.split(/\s+/).includes("intro")) {
-            introFound = true;
-            return (
-              <>
-                <p {...attributesToProps(domNode.attribs)}>
-                  {domToReact(domNode.children as DOMNode[], options)}
-                </p>
-                <ItemList items={report.items} />
-              </>
-            );
-          }
 
           if (domNode.name === "section" && domNode.attribs["data-source-id"]) {
             const sourceItem = itemsById.get(domNode.attribs["data-source-id"]);
@@ -62,7 +48,7 @@ export default function Article({ report }: { report: PublishedReport }) {
       const cleanHtml = sanitizeReportHtml(report.narrative_html);
       if (!cleanHtml.trim()) throw new Error("Report has no readable content.");
       const content = parse(cleanHtml, options);
-      return { content, introFound };
+      return { content };
     } catch {
       return { error: "This report could not be displayed. Please try another time." };
     }
@@ -72,8 +58,8 @@ export default function Article({ report }: { report: PublishedReport }) {
 
   return (
     <div className="report-container">
-      {!parsed.introFound && <ItemList items={report.items} />}
       {parsed.content}
+      <ItemList items={report.items} />
     </div>
   );
 }

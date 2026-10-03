@@ -70,6 +70,10 @@ function parseParagraphs(value: unknown): string[] {
 
 function parseNarrative(raw: string, items: Enriched[]): WrittenArticle {
   const parsed = parseObject(raw);
+  if (typeof parsed.title !== "string" || !parsed.title.trim()) {
+    throw new InvalidResponseError("Expected a nonempty article title.");
+  }
+  const title = parsed.title.trim();
   const intro = parseParagraphs(parsed.intro);
   if (intro.length !== 1) {
     throw new InvalidResponseError("Expected exactly one introductory paragraph.");
@@ -89,11 +93,11 @@ function parseNarrative(raw: string, items: Enriched[]): WrittenArticle {
       paragraphs: parseParagraphs(section.paragraphs),
     };
   });
-  return { intro, sections };
+  return { title, intro, sections };
 }
 
 function articleText(document: WrittenArticle): string {
-  return [...document.intro, ...document.sections.flatMap(s => [s.heading, ...s.paragraphs])].join("\n\n");
+  return [document.title, ...document.intro, ...document.sections.flatMap(s => [s.heading, ...s.paragraphs])].join("\n\n");
 }
 
 function parseMarkup(raw: string, document: WrittenArticle): string {
@@ -102,7 +106,7 @@ function parseMarkup(raw: string, document: WrittenArticle): string {
     throw new InvalidResponseError("Expected a complete <article> HTML fragment without code fences.");
   }
   const fragment = JSDOM.fragment(html);
-  const invalid = () => { throw new InvalidResponseError("HTML must preserve the writer's exact paragraphs, headings, order, and source IDs."); };
+  const invalid = () => { throw new InvalidResponseError("HTML must preserve the writer's exact title, paragraphs, headings, order, and source IDs."); };
   // Require explicit blocks: unwrapped text/comments would evade paragraph checks.
   function children(node: ParentNode): Element[] {
     for (const child of Array.from(node.childNodes)) {
@@ -114,7 +118,7 @@ function parseMarkup(raw: string, document: WrittenArticle): string {
   const article = roots[0];
   if (roots.length !== 1 || article?.tagName !== "ARTICLE" || article.className !== "content-piece") invalid();
   const allowedClasses: Record<string, string[]> = {
-    ARTICLE: ["content-piece"], SECTION: ["content-section"], H2: ["section-heading"],
+    ARTICLE: ["content-piece"], H1: ["main-title"], SECTION: ["content-section"], H2: ["section-heading"],
     P: ["", "intro", "emphasis"], SPAN: ["highlight"], STRONG: [""], EM: [""],
     CODE: [""], SUP: [""], SUB: [""],
   };
@@ -132,13 +136,14 @@ function parseMarkup(raw: string, document: WrittenArticle): string {
     }
   }
   const blocks = children(article);
-  if (blocks.length !== document.intro.length + document.sections.length) invalid();
+  if (blocks.length !== 1 + document.intro.length + document.sections.length) invalid();
+  block(blocks[0], "H1", document.title);
   document.intro.forEach((paragraph, index) => {
-    block(blocks[index], "P", paragraph);
-    if (blocks[index].className !== "intro") invalid();
+    block(blocks[1 + index], "P", paragraph);
+    if (blocks[1 + index].className !== "intro") invalid();
   });
   document.sections.forEach((source, index) => {
-    const section = blocks[document.intro.length + index];
+    const section = blocks[1 + document.intro.length + index];
     if (section.tagName !== "SECTION" || section.className !== "content-section" ||
         section.getAttribute("data-source-id") !== source.source_id) invalid();
     const parts = children(section);
@@ -160,14 +165,14 @@ interface BuildCtx {
 
 function makeSeed(writer: WriterConfig, runId: string, items: Enriched[]): BuildCtx {
   return {
-    document: { intro: [], sections: [] },
+    document: { title: "", intro: [], sections: [] },
     report  : {
       generated_at : new Date().toISOString(),
       model: writer.model,
       writer: { ...writer },
       run_id: runId,
       pipeline_settings: structuredClone(stages),
-      headline     : "Today in Tech & Research",
+      headline     : "",
       narrative_html: "",
       narrative_raw: "",
       items        : structuredClone(items),
@@ -293,7 +298,7 @@ export async function writeArticle(writer: WriterConfig, runId: string, items: E
           response_format: { type: "json_object" },
           post : (raw, obj) => {
             const document = parseNarrative(raw, obj.report.items);
-            return { ...obj, document, report: { ...obj.report, narrative_raw: articleText(document) } };
+            return { ...obj, document, report: { ...obj.report, headline: document.title, narrative_raw: articleText(document) } };
           },
         },
         1,
