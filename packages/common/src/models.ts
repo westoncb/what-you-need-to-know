@@ -37,7 +37,8 @@ export const modelConfig: {
   // One independent article per entry, all using the same selected sources.
   // Omitted max_tokens preserves the provider's default output limit.
   writers: [
-    { id: "gpt-luna", name: "GPT Luna", model: "~openai/gpt-luna-latest", temperature: 0.7 },
+    { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", model: "anthropic/claude-sonnet-5.5", temperature: 0.7 },
+    { id: "gpt-5-6-sol", name: "GPT-5.6 Sol", model: "openai/gpt-5.6-sol", temperature: 0.7 },
   ],
 };
 
