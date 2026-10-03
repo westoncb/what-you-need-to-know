@@ -5,7 +5,7 @@ import { JSDOM } from "jsdom";
 import { modelConfig, type WriterConfig } from "@wyntn/common/src/models";
 import { defaultRunOptions, type GenerationOptions } from "../run-options";
 import { type RationaleItem, type Enriched, type WrittenArticle,
-  whyPrompt, judgePrompt, duelPrompt, makeNarrativePrompt,
+  whyPrompt, judgePrompt, duelPrompt, narrativePrompt,
   ctxPrompt, markupPrompt } from "./prompts";
 
 /* ------------------------------------------------------------------ */
@@ -60,8 +60,8 @@ function parseObject(raw: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-function parseParagraphs(value: unknown, allowEmpty = false): string[] {
-  if (!Array.isArray(value) || (!allowEmpty && !value.length) ||
+function parseParagraphs(value: unknown): string[] {
+  if (!Array.isArray(value) || !value.length ||
       value.some(p => typeof p !== "string" || !p.trim())) {
     throw new InvalidResponseError("Expected an array of nonempty paragraphs.");
   }
@@ -70,7 +70,10 @@ function parseParagraphs(value: unknown, allowEmpty = false): string[] {
 
 function parseNarrative(raw: string, items: Enriched[]): WrittenArticle {
   const parsed = parseObject(raw);
-  const intro = parseParagraphs(parsed.intro, true);
+  const intro = parseParagraphs(parsed.intro);
+  if (intro.length !== 1) {
+    throw new InvalidResponseError("Expected exactly one introductory paragraph.");
+  }
   if (!Array.isArray(parsed.sections) || parsed.sections.length !== items.length) {
     throw new InvalidResponseError("Expected exactly one article section per selected source.");
   }
@@ -283,7 +286,7 @@ export async function writeArticle(writer: WriterConfig, runId: string, items: E
   const reportArr = await Flow.from([makeSeed(writer, runId, items)])
       /* ---- independent article writing ----------------------- */
       .llmMap<BuildCtx>(
-        obj => makeNarrativePrompt(writer.model)(obj.report.items),
+        obj => narrativePrompt(obj.report.items),
         {
           ...settings,
           // The envelope is a pipeline contract, independent of writer settings.

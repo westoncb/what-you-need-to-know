@@ -63,17 +63,19 @@ Return only JSON of the form {"context":"...","why":"..."}, with a nonempty stri
   { source: source(candidate.item) },
 );
 
-export const makeNarrativePrompt = (model: string) => (items: Enriched[]): ChatMsg[] => messages(
-  `hey ${model}, can you explain what's going on in each of these to me in full technical detail? chances are i may not read any of these in full myself, so i'm looking more for "teach me the literal content" than "summary". i also want your raw, realistic take on practical real-world impact: does something strike you as genuinely deep and important, incremental, or somewhere between? not everything will be technical; i mean the real meat of what's being talked about.
+export const narrativePrompt = (items: Enriched[]): ChatMsg[] => messages(
+  `Write a finished article in your own voice for a reader who may not read the original sources. Explain their substance in depth, with the concrete details needed to understand what is actually going on. Give your candid assessment of practical real-world significance: what seems deep and important, incremental, or uncertain, and why? Not everything will be technical; get at the real meat of each subject. The prose is the article itself, not a conversational response to the person requesting it.
 
 Evidence boundaries:
 - You have abstracts or partial extracts, not the full articles. Explain the details actually available; never invent missing methods, measurements, results, quotations, or conclusions.
 - Make clear in your prose when something is a source's claim, your general explanatory background, or your own judgment/speculation. You may question the source's claims and give a candid assessment.
-- If information needed for a detailed explanation is absent, say what cannot be determined from the extract. If text is missing entirely, state that limitation instead of reconstructing the article from its title.
+- Where missing evidence materially limits a specific explanation or assessment, acknowledge that limitation locally in the relevant section. Do not invent the missing information. Avoid blanket disclaimers or announcements of how you will handle the evidence.
+
+Open with one short paragraph about the subject matter itself. Establish an interesting observation, question, or tension grounded in the sources, and lead naturally into the detailed discussion. Do not catalogue the items, announce what you will cover, discuss the supplied material, or explain your writing process. Draw connections where they genuinely exist, without forcing unrelated subjects into a common theme.
 
 Write natural paragraphs in your own voice, without bullet lists or tables. Return the prose in this JSON envelope so it can be linked to its sources without guessing:
-{"intro":["optional introductory paragraph"],"sections":[{"source_id":"exact supplied ID","heading":"your heading","paragraphs":["your paragraph","another paragraph"]}]}
-Use an empty intro array if no introduction is needed. Include exactly one section per supplied source, in supplied order, with its exact ID, a nonempty heading, and one or more nonempty paragraphs. Each section must explain its assigned source. Strings contain plain text, not Markdown or HTML. The JSON structure is only a transport format; it must not make the prose into a list. Return only this JSON object.`,
+{"intro":["your introductory paragraph"],"sections":[{"source_id":"exact supplied ID","heading":"your heading","paragraphs":["your paragraph","another paragraph"]}]}
+The intro array must contain exactly one nonempty introductory paragraph. Include exactly one section per supplied source, in supplied order, with its exact ID, a nonempty heading, and one or more nonempty paragraphs. Each section must explain its assigned source. Strings contain plain text, not Markdown or HTML. The JSON structure is only a transport format; it must not make the prose into a list. Return only this JSON object.`,
   { sources: items.map(item => source(item.item)) },
 );
 
