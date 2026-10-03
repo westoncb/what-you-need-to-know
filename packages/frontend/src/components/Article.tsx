@@ -3,7 +3,7 @@ import parse, { attributesToProps, domToReact } from "html-react-parser";
 import type { DOMNode, HTMLReactParserOptions } from "html-react-parser";
 import { sanitizeReportHtml, sourceUrl, type PublishedReport, type ReportItem } from "../util/reports";
 import "./Article.css";
-import ItemList from "./ItemList";
+import ItemList, { type ContentsItem } from "./ItemList";
 
 const SourceAttribution = ({ item }: { item: ReportItem }) => (
   <div className="source-attribution">
@@ -19,9 +19,35 @@ export default function Article({ report }: { report: PublishedReport }) {
   const parsed = useMemo(() => {
     try {
       const itemsById = new Map(report.items.map(item => [item.id, item]));
+      const cleanHtml = sanitizeReportHtml(report.narrative_html);
+      if (!cleanHtml.trim()) throw new Error("Report has no readable content.");
+      const document = new DOMParser().parseFromString(cleanHtml, "text/html");
+      const contents: ContentsItem[] = [];
+      for (const section of Array.from(document.querySelectorAll("section[data-source-id]"))) {
+        const source = itemsById.get(section.getAttribute("data-source-id")!);
+        const title = section.querySelector(":scope > h2")?.textContent?.trim();
+        if (!source || !title) continue;
+        const anchor = `article-section-${contents.length + 1}`;
+        section.id = anchor;
+        contents.push({ title, anchor, source });
+      }
+      const hasIntro = !!document.querySelector("p.intro");
+      let contentsInserted = false;
       const options: HTMLReactParserOptions = {
         replace: domNode => {
           if (!("attribs" in domNode)) return;
+
+          const isIntro = domNode.name === "p" && domNode.attribs.class?.split(/\s+/).includes("intro");
+          if (!contentsInserted && (hasIntro ? isIntro : domNode.name === "h1")) {
+            contentsInserted = true;
+            return (
+              <>
+                {React.createElement(domNode.name, attributesToProps(domNode.attribs),
+                  domToReact(domNode.children as DOMNode[], options))}
+                <ItemList items={contents} />
+              </>
+            );
+          }
 
           if (domNode.name === "section" && domNode.attribs["data-source-id"]) {
             const sourceItem = itemsById.get(domNode.attribs["data-source-id"]);
@@ -40,15 +66,13 @@ export default function Article({ report }: { report: PublishedReport }) {
                 }
               }
             });
-            return <section {...attributesToProps(domNode.attribs)}>{children}</section>;
+            return <section {...attributesToProps(domNode.attribs)} tabIndex={-1}>{children}</section>;
           }
         },
       };
 
-      const cleanHtml = sanitizeReportHtml(report.narrative_html);
-      if (!cleanHtml.trim()) throw new Error("Report has no readable content.");
-      const content = parse(cleanHtml, options);
-      return { content };
+      const content = parse(document.body.innerHTML, options);
+      return { content, contents, contentsInserted };
     } catch {
       return { error: "This report could not be displayed. Please try another time." };
     }
@@ -58,8 +82,8 @@ export default function Article({ report }: { report: PublishedReport }) {
 
   return (
     <div className="report-container">
+      {!parsed.contentsInserted && <ItemList items={parsed.contents} />}
       {parsed.content}
-      <ItemList items={report.items} />
     </div>
   );
 }
