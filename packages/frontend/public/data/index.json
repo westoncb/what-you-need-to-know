@@ -1,1 +1,13 @@
-[]
+[
+  {
+    "day": "2026-10-02",
+    "headline": "Today in Tech & Research",
+    "reports": [
+      {
+        "writerId": "gpt-luna",
+        "model": "~openai/gpt-luna-latest",
+        "file": "2026-10-02/gpt-luna.json"
+      }
+    ]
+  }
+]
