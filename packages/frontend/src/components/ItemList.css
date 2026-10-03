@@ -1,21 +1,19 @@
 /* Minimalist Item List Container */
 .item-list-container {
-  margin: 1.5rem 0;
-  margin-top: 0;
-  /* border: 1px solid rgba(0, 0, 0, 0.08); */
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-  padding: 0.8rem 1rem 1rem;
+  margin: 0;
+  border-top: 1px solid #d5c9b7;
+  background-color: #e9e1d4;
+  padding: 1.5rem;
 }
 
 .item-list-heading {
-  font-family: 'Source Serif Pro', Georgia, serif;
-  font-size: 0.85rem;
+  font-family: system-ui, sans-serif;
+  font-size: 0.7rem;
   font-weight: 600;
-  color: #888;
-  margin-bottom: 0rem;
-  padding-bottom: 0.5rem;
-  /* border-bottom: 1px solid rgba(0, 0, 0, 0.05); */
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #665b4c;
+  margin-bottom: 0.75rem;
 }
 
 .item-list {
@@ -28,8 +26,8 @@
 .item-row {
   display: flex;
   align-items: center;
-  height: 32px; /* Even slimmer height */
-  background-color: #bfcbe5b3;
+  min-height: 44px;
+  background-color: rgba(255, 255, 255, 0.35);
   border: 1px solid rgba(0, 0, 0, 0.04);
   border-radius: 3px;
   overflow: visible; /* Changed from hidden to allow tooltips to show */
@@ -39,8 +37,9 @@
 /* Source indicator - hn, arxiv, etc */
 .item-source {
   position: relative;
-  flex: 0 0 36px;
-  height: 100%;
+  flex: 0 0 44px;
+  align-self: stretch;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -51,7 +50,7 @@
 .source-indicator {
   font-family: 'Source Code Pro', monospace;
   font-size: 0.65rem;
-  color: #777;
+  color: #6a5c49;
   letter-spacing: 0;
   text-transform: lowercase;
 }
@@ -73,12 +72,12 @@
 /* Item title */
 .item-title {
   flex: 1;
-  padding: 0 0.75rem;
+  min-width: 0;
+  padding: 0.6rem 0.75rem;
   font-family: 'Source Serif Pro', Georgia, serif;
   font-size: 0.85rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .item-title a {
@@ -94,7 +93,8 @@
 /* Item actions */
 .item-actions {
   display: flex;
-  height: 100%;
+  align-self: stretch;
+  flex-shrink: 0;
 }
 
 .item-action-button {
@@ -104,8 +104,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 100%;
+  width: 40px;
+  min-height: 44px;
   cursor: pointer;
   border-left: 1px solid rgba(0, 0, 0, 0.04);
   background-color: rgba(0, 0, 0, 0.03); /* Slightly darker than item */
@@ -118,7 +118,7 @@
 .action-label {
   font-family: 'Source Code Pro', monospace;
   font-size: 0.65rem;
-  color: #777;
+  color: #6a5c49;
 }
 
 .ctx-button, .why-button {
@@ -127,7 +127,7 @@
 }
 
 .ctx-button:hover, .why-button:hover {
-  background-color: rgba(210, 218, 235, 0.5); /* Slightly lighter version of your item row color */
+  background-color: rgba(183, 158, 119, 0.2);
 }
 
 .ctx-button .action-label, .why-button .action-label {
@@ -182,5 +182,14 @@
   border-left: 2px solid #999;
 }
 
-/* Source tooltip styling */
-.source-tooltip .tooltip
+.item-action-button:focus-visible,
+.item-list a:focus-visible {
+  outline: 2px solid #8b7150;
+  outline-offset: -2px;
+}
+
+@media (max-width: 600px) {
+  .item-list-container {
+    padding: 1.25rem 0.75rem;
+  }
+}

@@ -40,10 +40,9 @@ function WriterReport({ day, writer }: { day: ReportIndexEntry; writer: WriterCo
   return (
     <>
       <div className="report-metadata">
-        <span>{report.generated_at
-          ? `Generated ${new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "America/Phoenix" }).format(new Date(report.generated_at))}`
-          : `Report for ${report.day}`}</span>
-        <span>{report.model}</span>
+        <time dateTime={report.generated_at || report.day}>{report.generated_at
+          ? `Generated ${new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Phoenix" }).format(new Date(report.generated_at))}`
+          : `Report for ${report.day}`}</time>
       </div>
       <div className="tab-content"><div className="article-frame"><Article report={report} /></div></div>
     </>
@@ -74,7 +73,12 @@ export default function App() {
   return (
     <div className="app-container">
       <div className="app-content">
-        <div className="title-bar"><div className="title-bar-content"><div className="app-title">ai-hourly-news</div></div></div>
+        <header className="title-bar">
+          <div className="title-bar-content">
+            <p className="app-title">What You Need to Know</p>
+            <p className="app-subtitle">AI hourly news</p>
+          </div>
+        </header>
         <div className="tabs-container">
           <div className="tabs" role="tablist" aria-label="Article writers">
             {modelConfig.writers.map(writer => (
