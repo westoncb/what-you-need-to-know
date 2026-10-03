@@ -1,12 +1,17 @@
 [
   {
     "day": "2026-10-02",
-    "headline": "Spatial AI, Human Mobility, Sidney’s Parentheses, and a Minecraft City",
+    "headline": "Control, Memory, and Identity Across Emerging Technical Systems",
     "reports": [
       {
-        "writerId": "gpt-luna",
-        "model": "~openai/gpt-luna-latest",
-        "file": "2026-10-02/gpt-luna.json"
+        "writerId": "gpt-5-6-sol",
+        "model": "openai/gpt-5.6-sol",
+        "file": "2026-10-02/gpt-5-6-sol.json"
+      },
+      {
+        "writerId": "claude-sonnet-5-5",
+        "model": "anthropic/claude-sonnet-5.5",
+        "file": "2026-10-02/claude-sonnet-5-5.json"
       }
     ]
   }
