@@ -5,12 +5,12 @@
 The project contains:
 
 - **Source collection:** Scripts fetch Hacker News posts, extract linked article text, and download arXiv abstracts into a local SQLite database.
-- **The pipeline:** Uses the reader’s bio to assess relevance, filter candidates, and compare them to select up to eight sources. Each configured LLM receives the same original material and writes its own narrative. A separately configured LLM formats the prose for display, while supporting notes provide background and explain why each source is worth reading.
+- **The pipeline:** Uses the reader’s bio to assess relevance, filter candidates, and compare them to select up to eight sources. Each configured LLM receives the same original material and writes its own title, introductory paragraph, and narrative. A separately configured LLM formats the prose for display, while supporting notes provide background and explain why each source is worth reading.
 - **Custom flow abstraction:** `t-flow` is the project’s TypeScript foundation for composing the pipeline from operations such as mapping, filtering, selection, and reduction. It handles concurrency, retries, and instrumentation.
 - **Observer:** A development interface for inspecting pipeline stages, prompts, responses, and failures as a run progresses.
 - **Web frontend and publication:** A React interface with tabs for comparing LLM-generated narratives, source links, and supporting notes. An export script turns database reports into static JSON so the site can run on GitHub Pages without a backend server.
 
-The main scripts cover source collection (`news:fetch`), pipeline execution (`mmge:run`), static export (`site:export`), and the observer (`dev:observer`). Model choices live in a shared configuration; API credentials and the reader’s bio remain local.
+The main scripts cover source collection (`news:fetch`), pipeline execution (`mmge:run`), static export (`site:export`), and the observer (`dev:observer`). Model choices live in a shared configuration; API credentials and the reader’s bio are kept out of the published site.
 
 ## Setup
 
@@ -30,7 +30,7 @@ OPENROUTER_API_KEY=your-key
 DB_PATH=data/wyntn.db
 ```
 
-`DB_PATH` is optional and defaults to the path shown. Generation requires an OpenRouter key with available credit. The database, `.env`, and local bio are ignored by Git.
+`DB_PATH` is optional and defaults to the path shown. Generation requires an OpenRouter key with available credit. The default database, `.env`, and local bio are ignored by Git.
 
 ## Generate and view
 
@@ -39,7 +39,7 @@ pnpm news:run
 pnpm --filter @wyntn/frontend dev
 ```
 
-`news:run` fetches sources, generates narratives, and exports the site data in order. A failed step stops the run. Open the frontend at [localhost:5173/what-you-need-to-know/](http://localhost:5173/what-you-need-to-know/) (or Vite’s printed URL). It reads exported JSON, not the database.
+`news:run` fetches sources, generates narratives, and exports the site data in order. A failed step stops the run. Open the frontend at [localhost:5173/what-you-need-to-know/](http://localhost:5173/what-you-need-to-know/) (or Vite’s printed URL). It reads exported JSON, not the database, and shows the latest report date. Generation is on demand; no hourly scheduler is configured. Running again for the same date replaces each writer’s report rather than keeping an hourly archive.
 
 To run the steps separately:
 
@@ -53,25 +53,19 @@ Useful options for `news:run` and `mmge:run`:
 
 - `--limit 5`: consider at most five stored source items instead of the default 50. This limits generation inputs, not downloads or total LLM calls.
 - `--date YYYY-MM-DD`: use a particular batch date; the default is today in `America/Phoenix`.
-- `--observe`: enable the observer connection during generation.
+- `--observe`: start the observer dashboard and open it in your browser during generation.
 
 `news:fetch` also accepts `--date`, but always fetches **current** feeds; the date labels the batch rather than retrieving historical news. Generation reads sources already stored for that date. Fetching a repeated source updates its stored batch date. Use `--help` on these commands for their options.
 
 ## Observe a run
 
-Start the dashboard in one terminal:
-
-```sh
-pnpm dev:observer
-```
-
-Open [localhost:5174](http://localhost:5174), then run in another terminal:
-
 ```sh
 pnpm news:run --limit 5 --observe
 ```
 
-The dashboard connects to `ws://127.0.0.1:4000`. That connection is enabled only with `--observe` and closes when generation ends. The last snapshot stays visible until the dashboard is reloaded.
+`--observe` starts the dashboard, normally at [localhost:5174](http://localhost:5174), and opens it in your browser. It connects to `ws://127.0.0.1:4000`; use the printed dashboard URL if port 5174 is busy. Both servers stop when generation ends. The open tab retains its last snapshot, but reloading after shutdown will not work.
+
+`pnpm dev:observer` also runs the dashboard independently for development.
 
 ## Configuration and code
 
@@ -83,17 +77,21 @@ The dashboard connects to `ws://127.0.0.1:4000`. That connection is enabled only
 | [CLI scripts](packages/backend/cli/) | Fetching, generation, and export commands. |
 | [Frontend](packages/frontend/) / [observer](packages/observer-ui/) | Reader-facing site and development dashboard. |
 
-The private bio and selection rationales are used for selection. Public “why” and context notes are generated separately from source text alone.
+The current writers are `anthropic/claude-sonnet-5.5` and `openai/gpt-5.6-sol`. All shared stages, including HTML formatting, use `~openai/gpt-luna-latest`.
+
+The bio is sent to the selection LLMs through OpenRouter. It and the private selection rationales are excluded from exported reports; public “why” and context notes are generated separately from source text alone.
 
 ## Publish and check
 
-`pnpm site:export` writes up to 30 recent report dates to `packages/frontend/public/data/`. Review and commit that directory to publish new narratives. Local pipeline commands do not commit or push.
+The configured site address is [westoncb.github.io/what-you-need-to-know/](https://westoncb.github.io/what-you-need-to-know/).
 
-The [GitHub Pages workflow](.github/workflows/pages.yml) builds and deploys on pushes to `main`, or can be started manually. Set the repository’s **Settings → Pages → Source** to **GitHub Actions**. The workflow publishes committed exports; it does not fetch news or call LLMs. The frontend base path is configured in [vite.config.ts](packages/frontend/vite.config.ts).
+`pnpm site:export` writes up to 30 recent report dates to `packages/frontend/public/data/`. Commit and push that directory, including `index.json`, to `main` to publish new narratives. Frontend and model-configuration changes also need to be committed and pushed. Local pipeline commands do neither. An empty database causes export to fail without changing existing exports.
+
+The [GitHub Pages workflow](.github/workflows/pages.yml) builds and deploys on pushes to `main`, or can be started manually on `main`. Set the repository’s **Settings → Pages → Source** to **GitHub Actions**. The workflow publishes committed exports; it does not fetch news or call LLMs. The frontend base path is configured in [vite.config.ts](packages/frontend/vite.config.ts).
 
 The old `push:today` script still references an obsolete output path; use normal Git commands instead.
 
 ```sh
-pnpm test                              # CLI and observer checks; no paid LLM calls
+pnpm test                              # CLI, export, and observer checks; no paid LLM calls
 pnpm --filter @wyntn/frontend build     # Production site in packages/frontend/dist
 ```
